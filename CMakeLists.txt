@@ -5,17 +5,17 @@ project(Banny)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_executable(
-    Banny
+add_executable(Banny
 
     src/main.cpp
 
-    src/core/Bot.cpp
-    src/core/Bot.h
-
-    src/logger/Logger.cpp
-    src/logger/Logger.h
-
     src/config/Config.cpp
-    src/config/Config.h
-)
+    src/logger/Logger.cpp
+    src/core/bot.cpp
+    src/scanner/Scanner.cpp
+
+    src/triangle/TriangleBuilder.cpp
+    src/profit/ProfitCalculator.cpp
+    src/arbitrage/ArbitrageEngine.cpp
+    "src/market/SymbolResolver.cpp"
+ src/market/SymbolResolver.cpp)

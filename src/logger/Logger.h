@@ -1,7 +1,13 @@
 #pragma once
 
+#include <string>
+
 class Logger
 {
 public:
-    void Start();
+    bool Start();
+    void Info(const std::string& message);
+
+private:
+    std::string m_logFile = "banny.log";
 };

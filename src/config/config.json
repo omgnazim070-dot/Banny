@@ -9,7 +9,7 @@
 
 	"trading_mode": "paper",
 
-	"scan_interval_ms": 30,
+	"scan_interval_ms": 500,
 
-	"min_profit_percent": 0.20
+	"min_profit_percent": 1.5
 }
