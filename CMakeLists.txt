@@ -7,5 +7,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(
     Banny
+
     src/main.cpp
+
+    src/core/Bot.cpp
+    src/core/Bot.h
+
+    src/logger/Logger.cpp
+    src/logger/Logger.h
+
+    src/config/Config.cpp
+    src/config/Config.h
 )

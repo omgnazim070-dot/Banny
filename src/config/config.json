@@ -1,0 +1,15 @@
+{
+	"bot_name": "Banny",
+
+	"api_key": "",
+
+	"secret_key": "",
+
+	"test_mode": true,
+
+	"trading_mode": "paper",
+
+	"scan_interval_ms": 30,
+
+	"min_profit_percent": 0.20
+}

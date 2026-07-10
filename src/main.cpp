@@ -1,13 +1,21 @@
 #include <iostream>
 
+#include "config/Config.h"
+#include "logger/Logger.h"
+#include "core/Bot.h"
+
 int main()
 {
     std::cout << "[Banny]" << std::endl;
-    std::cout << "Запуск..." << std::endl;
 
-    std::cout << "Конфигурация загружена" << std::endl;
-    std::cout << "Логгер запущен" << std::endl;
-    std::cout << "Система готова" << std::endl;
+    Config config;
+    config.Load();
+
+    Logger logger;
+    logger.Start();
+
+    Bot bot;
+    bot.Run();
 
     return 0;
 }
