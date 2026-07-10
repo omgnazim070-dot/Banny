@@ -8,6 +8,7 @@
 #include "triangle/TriangleBuilder.h"
 #include "arbitrage/ArbitrageEngine.h"
 #include "market/SymbolResolver.h"
+#include "binance/BinanceRestClient.h"
 
 int main()
 {
@@ -98,10 +99,12 @@ int main()
             << std::endl;
     }
 
-    Scanner scanner;
+    BinanceRestClient binance;
 
     auto marketData =
-        scanner.GetTestMarketData();
+        binance.DownloadPrices();
+
+    Scanner scanner;
 
     ArbitrageEngine engine;
 
