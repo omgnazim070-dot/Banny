@@ -65,6 +65,21 @@ bool Config::Load()
         0.20
     );
 
+    CommissionPercent = config.value(
+        "commission_percent",
+        0.1
+    );
+
+    SlippagePercent = config.value(
+        "slippage_percent",
+        0.05
+    );
+
+    StartBalance = config.value(
+        "start_balance",
+        1000.0
+    );
+
     std::cout
         << "Loading config.json"
         << std::endl;

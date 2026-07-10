@@ -4,7 +4,9 @@
 
 void Scanner::Scan()
 {
-    std::cout << "Scanning market..." << std::endl;
+    std::cout
+        << "Scanning market..."
+        << std::endl;
 
     int symbols = 1250;
     int routes = 3500;
@@ -28,19 +30,4 @@ void Scanner::Scan()
         << bestProfit
         << "%"
         << std::endl;
-}
-
-MarketData Scanner::GetTestMarketData()
-{
-    MarketData data;
-
-    data.prices["BTCUSDT"] = 100000.0;
-
-    data.prices["ETHBTC"] = 0.03;
-    data.prices["ETHUSDT"] = 3200.0;
-
-    data.prices["BNBBTC"] = 0.006;
-    data.prices["BNBUSDT"] = 620.0;
-
-    return data;
 }

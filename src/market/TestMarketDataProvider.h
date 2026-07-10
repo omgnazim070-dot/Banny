@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../market/IMarketDataProvider.h"
+#include "IMarketDataProvider.h"
 
-class BinanceRestClient :
+class TestMarketDataProvider :
     public IMarketDataProvider
 {
 public:

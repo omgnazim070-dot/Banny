@@ -1,9 +1,17 @@
 {
   "api_key": "",
-  "bot_name": "Banny",
-  "min_profit_percent": 1.5,
-  "scan_interval_ms": 500,
   "secret_key": "",
+
+  "bot_name": "Banny",
   "test_mode": true,
-  "trading_mode": "paper"
+  "trading_mode": "paper",
+
+  "scan_interval_ms": 500,
+
+  "min_profit_percent": 1.5,
+
+  "commission_percent": 0.1,
+  "slippage_percent": 0.05,
+
+  "start_balance": 1000.0
 }
