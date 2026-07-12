@@ -98,6 +98,15 @@ ProfitResult ProfitCalculator::CalculateRealistic(
 
     result.startAmount = startAmount;
 
+    if (prices.buyPrice1 <= 0.0 ||
+        prices.buyPrice2 <= 0.0 ||
+        prices.sellPrice3 <= 0.0)
+    {
+        result.endAmount = startAmount;
+        result.profitPercent = -100.0;
+        return result;
+    }
+
     double buyPrice1 =
         prices.buyPrice1 *
         (1.0 + slippageRate);

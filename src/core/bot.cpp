@@ -15,7 +15,7 @@
 #include "../market/SymbolResolver.h"
 #include "../market/TestSymbolRegistryProvider.h"
 
-#include "../market/TestMarketDataProvider.h"
+#include "../market/BinanceMarketDataProvider.h"
 #include "../paper/PaperTradeJournal.h"
 
 #include "../paper/PaperTradeCsvLogger.h"
@@ -66,7 +66,7 @@ void Bot::Run()
 
     logger.Info("Config loaded");
 
-    TestMarketDataProvider provider;
+    BinanceMarketDataProvider provider;
 
     auto marketData =
         provider.GetMarketData();
@@ -81,62 +81,66 @@ void Bot::Run()
     auto registry =
         symbolProvider.GetSymbols();
 
-    auto symbols =
-        registry.symbols;
+    std::cout
+        << "Pairs loaded: "
+        << registry.pairs.size()
+        << std::endl;
+
+    if (!registry.pairs.empty())
+    {
+        const auto& pair =
+            registry.pairs.front();
+
+        std::cout
+            << pair.symbol
+            << " | "
+            << pair.baseAsset
+            << " | "
+            << pair.quoteAsset
+            << std::endl;
+    }
+
+    std::vector<std::string> symbols;
+
+    for (const auto& pair : registry.pairs)
+    {
+        symbols.push_back(
+            pair.symbol);
+    }
 
     std::cout
-        << "Registry symbols: "
-        << symbols.size()
+        << "Registry pairs: "
+        << registry.pairs.size()
         << std::endl;
 
     for (size_t i = 0;
-        i < std::min<size_t>(20, symbols.size());
+        i < std::min<size_t>(20, registry.pairs.size());
         ++i)
     {
         std::cout
-            << symbols[i]
-            << std::endl;
+            << registry.pairs[i].symbol
+            << std::endl;;
     }
 
     TriangleBuilder builder;
 
     auto triangles =
-        builder.Build(symbols);
+        builder.Build(
+            registry.pairs);
+
+    std::cout
+        << std::endl
+        << "Found "
+        << triangles.size()
+        << " triangles"
+        << std::endl
+        << std::endl;
 
     std::cout << std::endl;
-
-    for (const auto& t : triangles)
-    {
-        std::cout
-            << t.assetA
-            << " -> "
-            << t.assetB
-            << " -> "
-            << t.assetC
-            << " -> "
-            << t.assetA
-            << std::endl;
-    }
 
     std::cout << std::endl;
 
     SymbolResolver resolver;
-
-    for (const auto& t : triangles)
-    {
-        auto pairs = resolver.Resolve(
-            t.assetA,
-            t.assetB,
-            t.assetC);
-
-        std::cout
-            << pairs.pair1
-            << " | "
-            << pairs.pair2
-            << " | "
-            << pairs.pair3
-            << std::endl;
-    }
 
     TradingSettings settings;
 

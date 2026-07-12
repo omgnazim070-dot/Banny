@@ -1,10 +1,11 @@
 #pragma once
 
 #include <vector>
-#include <string>
+
+#include "../market/TradingPair.h"
 
 class BinanceExchangeInfoClient
 {
 public:
-    std::vector<std::string> GetSymbols();
+    std::vector<TradingPair> GetSymbols();
 };

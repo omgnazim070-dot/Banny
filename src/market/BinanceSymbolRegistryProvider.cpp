@@ -9,7 +9,7 @@ BinanceSymbolRegistryProvider::GetSymbols()
 
     SymbolRegistry registry;
 
-    registry.symbols =
+    registry.pairs =
         client.GetSymbols();
 
     return registry;

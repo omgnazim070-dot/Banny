@@ -78,6 +78,13 @@ Statistics ArbitrageEngine::Analyze(
         prices.sellPrice3 =
             ticker3.bidPrice;
 
+        if (prices.buyPrice1 <= 0.0 ||
+            prices.buyPrice2 <= 0.0 ||
+            prices.sellPrice3 <= 0.0)
+        {
+            continue;
+        }
+
         auto result =
             calculator.CalculateRealistic(
                 settings.startBalance,

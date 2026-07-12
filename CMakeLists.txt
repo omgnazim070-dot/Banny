@@ -27,7 +27,8 @@ add_executable(Banny
     "src/market/Ticker.h" "src/market/Ticker.cpp"
     src/market/Ticker.cpp "src/profit/TradePrices.h" "src/market/IMarketDataProvider.h" "src/market/TestMarketDataProvider.h" "src/market/TestMarketDataProvider.cpp" "src/market/SymbolExtractor.h" "src/market/SymbolExtractor.cpp" "src/paper/PaperTradeJournal.h" "src/paper/PaperTradeJournal.cpp" "src/core/Statistics.h" "src/paper/PaperTradeCsvLogger.h" "src/paper/PaperTradeCsvLogger.cpp" "src/market/MarketSnapshotLogger.h" "src/market/MarketSnapshotLogger.cpp" "src/market/SymbolRegistry.h" "src/market/TestSymbolRegistryProvider.h" "src/market/TestSymbolRegistryProvider.cpp" "src/market/ISymbolRegistryProvider.h" "src/binance/BinanceExchangeInfoClient.h" "src/binance/BinanceExchangeInfoClient.cpp" "src/market/BinanceSymbolRegistryProvider.h" "src/market/BinanceSymbolRegistryProvider.cpp"
     src/binance/BinanceExchangeInfoClient.cpp
-    src/market/BinanceSymbolRegistryProvider.cpp)
+    src/market/BinanceSymbolRegistryProvider.cpp "src/market/BinanceMarketDataProvider.h"
+    src/market/BinanceMarketDataProvider.cpp)
 
     target_link_libraries(
     Banny

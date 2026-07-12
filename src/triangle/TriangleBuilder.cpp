@@ -1,61 +1,112 @@
 #include "TriangleBuilder.h"
 
-#include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
+#include <set>
+#include <iostream>
 
 bool TriangleBuilder::PairExists(
-    const std::vector<std::string>& symbols,
-    const std::string& pair)
+    const std::vector<TradingPair>& pairs,
+    const std::string& baseAsset,
+    const std::string& quoteAsset)
 {
-    return std::find(
-        symbols.begin(),
-        symbols.end(),
-        pair) != symbols.end();
+    for (const auto& pair : pairs)
+    {
+        if (pair.baseAsset == baseAsset &&
+            pair.quoteAsset == quoteAsset)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 std::vector<Triangle> TriangleBuilder::Build(
-    const std::vector<std::string>& symbols)
+    const std::vector<TradingPair>& pairs)
 {
     std::vector<Triangle> triangles;
 
-    std::vector<std::string> assets =
-    {
-        "BTC",
-        "ETH",
-        "USDT",
-        "BNB"
-    };
+    std::cout
+        << "TriangleBuilder started"
+        << std::endl;
 
-    for (const auto& a : assets)
+    std::unordered_map<
+        std::string,
+        std::unordered_set<std::string>> graph;
+
+    for (const auto& pair : pairs)
     {
-        for (const auto& b : assets)
+        graph[pair.baseAsset]
+            .insert(pair.quoteAsset);
+
+        graph[pair.quoteAsset]
+            .insert(pair.baseAsset);
+    }
+
+    std::set<std::string> uniqueTriangles;
+
+    for (const auto& [assetA, neighborsA] : graph)
+    {
+        for (const auto& assetB : neighborsA)
         {
-            for (const auto& c : assets)
+            auto itB =
+                graph.find(assetB);
+
+            if (itB == graph.end())
             {
-                if (a == b || b == c || a == c)
+                continue;
+            }
+
+            for (const auto& assetC : itB->second)
+            {
+                if (assetC == assetA)
                 {
                     continue;
                 }
 
-                std::string pairAB = b + a;
-                std::string pairBC = c + b;
-                std::string pairCA = c + a;
+                auto itC =
+                    graph.find(assetC);
 
-                if (
-                    PairExists(symbols, pairAB) &&
-                    PairExists(symbols, pairBC) &&
-                    PairExists(symbols, pairCA))
+                if (itC == graph.end())
                 {
-                    Triangle t;
-
-                    t.assetA = a;
-                    t.assetB = b;
-                    t.assetC = c;
-
-                    triangles.push_back(t);
+                    continue;
                 }
+
+                if (!itC->second.contains(assetA))
+                {
+                    continue;
+                }
+
+                std::string key =
+                    assetA + "|" +
+                    assetB + "|" +
+                    assetC;
+
+                if (uniqueTriangles.contains(key))
+                {
+                    continue;
+                }
+
+                Triangle triangle;
+
+                triangle.assetA = assetA;
+                triangle.assetB = assetB;
+                triangle.assetC = assetC;
+
+                triangles.push_back(
+                    triangle);
+
+                uniqueTriangles.insert(
+                    key);
             }
         }
     }
+
+    std::cout
+        << "Triangles found: "
+        << triangles.size()
+        << std::endl;
 
     return triangles;
 }

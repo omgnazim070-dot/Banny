@@ -1,9 +1,10 @@
 #pragma once
 
 #include <vector>
-#include <string>
+
+#include "TradingPair.h"
 
 struct SymbolRegistry
 {
-    std::vector<std::string> symbols;
+    std::vector<TradingPair> pairs;
 };

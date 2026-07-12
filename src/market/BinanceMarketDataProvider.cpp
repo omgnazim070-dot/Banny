@@ -1,4 +1,6 @@
-#include "BinanceExchangeInfoClient.h"
+#include "BinanceMarketDataProvider.h"
+
+#include "../market/Ticker.h"
 
 #include "../../third_party/json/json.hpp"
 
@@ -7,16 +9,14 @@
 
 #include <iostream>
 #include <string>
-#include <vector>
 
 #pragma comment(lib, "winhttp.lib")
 
 using json = nlohmann::json;
 
-std::vector<TradingPair>
-BinanceExchangeInfoClient::GetSymbols()
+MarketData BinanceMarketDataProvider::GetMarketData()
 {
-    std::vector<TradingPair> pairs;
+    MarketData marketData;
 
     HINTERNET session =
         WinHttpOpen(
@@ -32,7 +32,7 @@ BinanceExchangeInfoClient::GetSymbols()
             << "WinHttpOpen failed"
             << std::endl;
 
-        return pairs;
+        return marketData;
     }
 
     HINTERNET connection =
@@ -46,18 +46,14 @@ BinanceExchangeInfoClient::GetSymbols()
     {
         WinHttpCloseHandle(session);
 
-        std::cout
-            << "WinHttpConnect failed"
-            << std::endl;
-
-        return pairs;
+        return marketData;
     }
 
     HINTERNET request =
         WinHttpOpenRequest(
             connection,
             L"GET",
-            L"/api/v3/exchangeInfo",
+            L"/api/v3/ticker/bookTicker",
             nullptr,
             WINHTTP_NO_REFERER,
             WINHTTP_DEFAULT_ACCEPT_TYPES,
@@ -68,11 +64,7 @@ BinanceExchangeInfoClient::GetSymbols()
         WinHttpCloseHandle(connection);
         WinHttpCloseHandle(session);
 
-        std::cout
-            << "WinHttpOpenRequest failed"
-            << std::endl;
-
-        return pairs;
+        return marketData;
     }
 
     BOOL result =
@@ -87,11 +79,7 @@ BinanceExchangeInfoClient::GetSymbols()
 
     if (!result)
     {
-        std::cout
-            << "WinHttpSendRequest failed"
-            << std::endl;
-
-        return pairs;
+        return marketData;
     }
 
     result =
@@ -101,11 +89,7 @@ BinanceExchangeInfoClient::GetSymbols()
 
     if (!result)
     {
-        std::cout
-            << "WinHttpReceiveResponse failed"
-            << std::endl;
-
-        return pairs;
+        return marketData;
     }
 
     std::string responseBody;
@@ -149,31 +133,29 @@ BinanceExchangeInfoClient::GetSymbols()
     json data =
         json::parse(responseBody);
 
-    for (const auto& item : data["symbols"])
+    for (const auto& item : data)
     {
-        if (item["status"] != "TRADING")
-        {
-            continue;
-        }
+        Ticker ticker;
 
-        TradingPair pair;
-
-        pair.symbol =
+        ticker.symbol =
             item["symbol"].get<std::string>();
 
-        pair.baseAsset =
-            item["baseAsset"].get<std::string>();
+        ticker.bidPrice =
+            std::stod(
+                item["bidPrice"].get<std::string>());
 
-        pair.quoteAsset =
-            item["quoteAsset"].get<std::string>();
+        ticker.askPrice =
+            std::stod(
+                item["askPrice"].get<std::string>());
 
-        pairs.push_back(pair);
+        marketData.tickers[
+            ticker.symbol] = ticker;
     }
 
     std::cout
-        << "Loaded pairs: "
-        << pairs.size()
+        << "Loaded book tickers: "
+        << marketData.tickers.size()
         << std::endl;
 
-    return pairs;
+    return marketData;
 }
