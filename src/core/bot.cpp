@@ -23,6 +23,12 @@
 
 #include "../market/BinanceSymbolRegistryProvider.h"
 
+#include <thread>
+#include <chrono>
+
+#include "../market/MarketMonitor.h"
+#include "../binance/BinanceWebSocketClient.h"
+
 
 void Bot::Run()
 {
@@ -66,15 +72,13 @@ void Bot::Run()
 
     logger.Info("Config loaded");
 
+    BinanceWebSocketClient client;
+
+    client.Connect(
+        "wss://stream.binance.com:9443/ws");
+
     BinanceMarketDataProvider provider;
-
-    auto marketData =
-        provider.GetMarketData();
-
     MarketSnapshotLogger snapshotLogger;
-
-    snapshotLogger.Save(
-        marketData);
 
     BinanceSymbolRegistryProvider symbolProvider;
 
@@ -128,6 +132,12 @@ void Bot::Run()
         builder.Build(
             registry.pairs);
 
+        auto marketData =
+            provider.GetMarketData();
+
+        snapshotLogger.Save(
+            marketData);
+
     std::cout
         << std::endl
         << "Found "
@@ -139,8 +149,6 @@ void Bot::Run()
     std::cout << std::endl;
 
     std::cout << std::endl;
-
-    SymbolResolver resolver;
 
     TradingSettings settings;
 
@@ -160,10 +168,10 @@ void Bot::Run()
 
     PaperTradeCsvLogger csvLogger;
 
-    ArbitrageEngine engine;
+    MarketMonitor monitor;
 
     auto stats =
-        engine.Analyze(
+        monitor.Run(
             triangles,
             marketData,
             settings);
@@ -274,9 +282,10 @@ void Bot::Run()
             << std::endl;
     }
 
-    Scanner scanner;
+    // Scanner scanner;
 
-    scanner.Scan();
+    // scanner.Scan();
 
     logger.Info("Core initialized");
+
 }
