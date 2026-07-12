@@ -32,7 +32,9 @@ std::vector<Triangle> TriangleBuilder::Build(
             for (const auto& c : assets)
             {
                 if (a == b || b == c || a == c)
+                {
                     continue;
+                }
 
                 std::string pairAB = b + a;
                 std::string pairBC = c + b;
@@ -44,6 +46,7 @@ std::vector<Triangle> TriangleBuilder::Build(
                     PairExists(symbols, pairCA))
                 {
                     Triangle t;
+
                     t.assetA = a;
                     t.assetB = b;
                     t.assetC = c;

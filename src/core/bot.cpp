@@ -21,6 +21,8 @@
 #include "../paper/PaperTradeCsvLogger.h"
 #include "../market/MarketSnapshotLogger.h"
 
+#include "../market/BinanceSymbolRegistryProvider.h"
+
 
 void Bot::Run()
 {
@@ -74,13 +76,27 @@ void Bot::Run()
     snapshotLogger.Save(
         marketData);
 
-    TestSymbolRegistryProvider symbolProvider;
+    BinanceSymbolRegistryProvider symbolProvider;
 
     auto registry =
         symbolProvider.GetSymbols();
 
     auto symbols =
         registry.symbols;
+
+    std::cout
+        << "Registry symbols: "
+        << symbols.size()
+        << std::endl;
+
+    for (size_t i = 0;
+        i < std::min<size_t>(20, symbols.size());
+        ++i)
+    {
+        std::cout
+            << symbols[i]
+            << std::endl;
+    }
 
     TriangleBuilder builder;
 

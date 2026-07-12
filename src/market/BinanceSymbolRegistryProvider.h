@@ -2,7 +2,7 @@
 
 #include "ISymbolRegistryProvider.h"
 
-class TestSymbolRegistryProvider :
+class BinanceSymbolRegistryProvider :
     public ISymbolRegistryProvider
 {
 public:
