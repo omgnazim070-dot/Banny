@@ -8,7 +8,6 @@ Statistics ArbitrageEngine::Analyze(
     const TradingSettings& settings)
 {
     ProfitCalculator calculator;
-    SymbolResolver resolver;
     Statistics stats;
 
     double bestProfit = -999.0;
@@ -32,24 +31,28 @@ Statistics ArbitrageEngine::Analyze(
 
     for (const auto& triangle : triangles)
     {
-        auto pairs = resolver.Resolve(
-            triangle.assetA,
-            triangle.assetB,
-            triangle.assetC);
+        const std::string& pair1 =
+            triangle.pairAB.symbol;
 
-        if (marketData.tickers.find(pairs.pair1) ==
+        const std::string& pair2 =
+            triangle.pairBC.symbol;
+
+        const std::string& pair3 =
+            triangle.pairCA.symbol;
+
+        if (marketData.tickers.find(pair1) ==
             marketData.tickers.end())
         {
             continue;
         }
 
-        if (marketData.tickers.find(pairs.pair2) ==
+        if (marketData.tickers.find(pair2) ==
             marketData.tickers.end())
         {
             continue;
         }
 
-        if (marketData.tickers.find(pairs.pair3) ==
+        if (marketData.tickers.find(pair3) ==
             marketData.tickers.end())
         {
             continue;
@@ -57,30 +60,60 @@ Statistics ArbitrageEngine::Analyze(
 
         const auto& ticker1 =
             marketData.tickers.at(
-                pairs.pair1);
+                pair1);
 
         const auto& ticker2 =
             marketData.tickers.at(
-                pairs.pair2);
+                pair2);
 
         const auto& ticker3 =
             marketData.tickers.at(
-                pairs.pair3);
+                pair3);
 
         TradePrices prices;
 
-        prices.buyPrice1 =
-            ticker1.askPrice;
+        /*
+        A -> B
+        */
+        prices.buy1 =
+            (triangle.pairAB.quoteAsset ==
+                triangle.assetA);
 
-        prices.buyPrice2 =
-            ticker2.askPrice;
+        /*
+        B -> C
+        */
+        prices.buy2 =
+            (triangle.pairBC.quoteAsset ==
+                triangle.assetB);
 
-        prices.sellPrice3 =
-            ticker3.bidPrice;
+        /*
+        C -> A
+        */
+        prices.buy3 =
+            (triangle.pairCA.quoteAsset ==
+                triangle.assetC);
 
-        if (prices.buyPrice1 <= 0.0 ||
-            prices.buyPrice2 <= 0.0 ||
-            prices.sellPrice3 <= 0.0)
+        prices.price1 =
+            prices.buy1
+            ? ticker1.askPrice
+            : ticker1.bidPrice;
+
+        prices.price2 =
+            prices.buy2
+            ? ticker2.askPrice
+            : ticker2.bidPrice;
+
+        prices.price3 =
+            prices.buy3
+            ? ticker3.askPrice
+            : ticker3.bidPrice;
+        prices.buy3 =
+            (triangle.pairCA.quoteAsset ==
+                triangle.assetC);
+
+        if (prices.price1 <= 0.0 ||
+            prices.price2 <= 0.0 ||
+            prices.price3 <= 0.0)
         {
             continue;
         }
@@ -140,20 +173,20 @@ Statistics ArbitrageEngine::Analyze(
 
         std::cout
             << "Pairs: "
-            << pairs.pair1
+            << pair1
             << " | "
-            << pairs.pair2
+            << pair2
             << " | "
-            << pairs.pair3
+            << pair3
             << std::endl;
 
         std::cout
             << "Trade Prices: "
-            << prices.buyPrice1
+            << prices.price1
             << " | "
-            << prices.buyPrice2
+            << prices.price2
             << " | "
-            << prices.sellPrice3
+            << prices.price3
             << std::endl
             << std::endl;
 

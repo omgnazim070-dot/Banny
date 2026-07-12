@@ -22,6 +22,28 @@ bool TriangleBuilder::PairExists(
     return false;
 }
 
+TradingPair TriangleBuilder::FindPair(
+    const std::vector<TradingPair>& pairs,
+    const std::string& asset1,
+    const std::string& asset2)
+{
+    for (const auto& pair : pairs)
+    {
+        if (
+            (pair.baseAsset == asset1 &&
+                pair.quoteAsset == asset2)
+            ||
+            (pair.baseAsset == asset2 &&
+                pair.quoteAsset == asset1)
+            )
+        {
+            return pair;
+        }
+    }
+
+    return TradingPair{};
+}
+
 std::vector<Triangle> TriangleBuilder::Build(
     const std::vector<TradingPair>& pairs)
 {
@@ -93,6 +115,24 @@ std::vector<Triangle> TriangleBuilder::Build(
                 triangle.assetA = assetA;
                 triangle.assetB = assetB;
                 triangle.assetC = assetC;
+
+                triangle.pairAB =
+                    FindPair(
+                        pairs,
+                        assetA,
+                        assetB);
+
+                triangle.pairBC =
+                    FindPair(
+                        pairs,
+                        assetB,
+                        assetC);
+
+                triangle.pairCA =
+                    FindPair(
+                        pairs,
+                        assetC,
+                        assetA);
 
                 triangles.push_back(
                     triangle);

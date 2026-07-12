@@ -10,6 +10,10 @@ struct Triangle
     std::string assetA;
     std::string assetB;
     std::string assetC;
+
+    TradingPair pairAB;
+    TradingPair pairBC;
+    TradingPair pairCA;
 };
 
 class TriangleBuilder
@@ -23,4 +27,9 @@ private:
         const std::vector<TradingPair>& pairs,
         const std::string& baseAsset,
         const std::string& quoteAsset);
+
+    TradingPair FindPair(
+        const std::vector<TradingPair>& pairs,
+        const std::string& asset1,
+        const std::string& asset2);
 };
