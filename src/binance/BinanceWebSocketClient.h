@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <windows.h>
 #include <winhttp.h>
@@ -10,11 +11,17 @@ class BinanceWebSocketClient
 public:
 
     bool Connect(
-        const std::string& url);
+        const std::vector<std::string>& symbols);
+
+    bool Receive(
+        std::string& message);
 
     void Disconnect();
 
     bool IsConnected() const;
+
+    bool Send(
+        const std::string& message);
 
 private:
 

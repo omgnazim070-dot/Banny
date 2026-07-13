@@ -43,18 +43,21 @@ Statistics ArbitrageEngine::Analyze(
         if (marketData.tickers.find(pair1) ==
             marketData.tickers.end())
         {
+            stats.missingTickerTriangles++;
             continue;
         }
 
         if (marketData.tickers.find(pair2) ==
             marketData.tickers.end())
         {
+            stats.missingTickerTriangles++;
             continue;
         }
 
         if (marketData.tickers.find(pair3) ==
             marketData.tickers.end())
         {
+            stats.missingTickerTriangles++;
             continue;
         }
 
@@ -118,12 +121,35 @@ Statistics ArbitrageEngine::Analyze(
             continue;
         }
 
+        stats.analyzedTriangles++;
+
         auto result =
             calculator.CalculateRealistic(
                 settings.startBalance,
                 prices,
                 settings.commissionPercent / 100.0,
                 settings.slippagePercent / 100.0);
+
+        if (result.profitPercent > bestProfit)
+        {
+            bestProfit =
+                result.profitPercent;
+
+            stats.bestProfitPercent =
+                result.profitPercent;
+
+            stats.bestRoute =
+                triangle.assetA +
+                " -> " +
+                triangle.assetB +
+                " -> " +
+                triangle.assetC +
+                " -> " +
+                triangle.assetA;
+
+            bestTriangle =
+                triangle;
+        }
 
         if (result.profitPercent <
             settings.minProfitPercent)
@@ -197,6 +223,15 @@ Statistics ArbitrageEngine::Analyze(
 
             stats.bestProfitPercent =
                 result.profitPercent;
+
+            stats.bestRoute =
+                triangle.assetA +
+                " -> " +
+                triangle.assetB +
+                " -> " +
+                triangle.assetC +
+                " -> " +
+                triangle.assetA;
 
             bestTriangle =
                 triangle;

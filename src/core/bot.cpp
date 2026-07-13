@@ -29,6 +29,13 @@
 #include "../market/MarketMonitor.h"
 #include "../binance/BinanceWebSocketClient.h"
 
+#include "../market/MarketDataCache.h"
+#include "../../third_party/json/json.hpp"
+
+#include <iomanip>
+#include "../market/WebSocketMarketDataProvider.h"
+
+using json = nlohmann::json;
 
 void Bot::Run()
 {
@@ -72,18 +79,55 @@ void Bot::Run()
 
     logger.Info("Config loaded");
 
-    BinanceWebSocketClient client;
-
-    client.Connect(
-        "wss://stream.binance.com:9443/ws");
-
-    BinanceMarketDataProvider provider;
-    MarketSnapshotLogger snapshotLogger;
-
     BinanceSymbolRegistryProvider symbolProvider;
 
     auto registry =
         symbolProvider.GetSymbols();
+
+    std::vector<std::string> wsSymbols;
+
+    for (size_t i = 0;
+        i < std::min<size_t>(750, registry.pairs.size());
+        ++i)
+    {
+        wsSymbols.push_back(
+            registry.pairs[i].symbol);
+    }
+
+    WebSocketMarketDataProvider wsProvider;
+
+    if (!wsProvider.Start(
+        wsSymbols))
+    {
+        std::cout
+            << "STEP 1"
+            << std::endl;
+
+        std::cout
+            << "WebSocket provider start failed"
+            << std::endl;
+
+        return;
+    }
+
+    std::cout
+        << "STEP 2"
+        << std::endl;
+
+    for (int i = 0; i < 1000; ++i)
+    {
+        wsProvider.ProcessNextMessage();
+    }
+
+    std::cout
+        << "STEP 3"
+        << std::endl;
+
+    std::cout
+        << "Initial market warmup completed"
+        << std::endl;
+
+    MarketSnapshotLogger snapshotLogger;
 
     std::cout
         << "Pairs loaded: "
@@ -126,17 +170,15 @@ void Bot::Run()
             << std::endl;;
     }
 
+    std::cout
+        << "STEP 4"
+        << std::endl;
+
     TriangleBuilder builder;
 
     auto triangles =
         builder.Build(
             registry.pairs);
-
-        auto marketData =
-            provider.GetMarketData();
-
-        snapshotLogger.Save(
-            marketData);
 
     std::cout
         << std::endl
@@ -145,10 +187,6 @@ void Bot::Run()
         << " triangles"
         << std::endl
         << std::endl;
-
-    std::cout << std::endl;
-
-    std::cout << std::endl;
 
     TradingSettings settings;
 
@@ -170,121 +208,75 @@ void Bot::Run()
 
     MarketMonitor monitor;
 
-    auto stats =
-        monitor.Run(
-            triangles,
-            marketData,
-            settings);
-
-    std::cout
-        << std::endl
-        << "=== BANNY STATISTICS ==="
-        << std::endl;
-
-    std::cout
-        << "Total Triangles: "
-        << stats.totalTriangles
-        << std::endl;
-
-    std::cout
-        << "Profitable: "
-        << stats.profitableTriangles
-        << std::endl;
-
-    std::cout
-        << "Rejected: "
-        << stats.rejectedTriangles
-        << std::endl;
-
-    std::cout
-        << "Best Profit: "
-        << stats.bestProfitPercent
-        << "%"
-        << std::endl
-        << std::endl;
-
-    if (stats.profitableTriangles > 0)
+    while (true)
     {
-        PaperTrade trade;
+        for (int i = 0; i < 500; ++i)
+        {
+            wsProvider.ProcessNextMessage();
+        }
 
-        trade.route =
-            "BEST_ROUTE";
+        auto marketData =
+            wsProvider.GetSnapshot();
 
-        trade.startBalance =
-            settings.startBalance;
+        snapshotLogger.Save(
+            marketData);
 
-        trade.endBalance =
-            settings.startBalance *
-            (1.0 +
-                stats.bestProfitPercent / 100.0);
+        auto stats =
+            monitor.Run(
+                triangles,
+                marketData,
+                settings);
 
-        trade.profitPercent =
-            stats.bestProfitPercent;
-
-        trade.profitUsdt =
-            trade.endBalance -
-            trade.startBalance;
-
-        journal.Add(trade);
-        csvLogger.Append(trade);
-    }
-
-    std::cout
-        << "Paper Trades: "
-        << journal.GetTrades().size()
-        << std::endl;
-
-    std::cout
-        << std::endl
-        << "=== PAPER TRADE HISTORY ==="
-        << std::endl;
-
-    int tradeIndex = 1;
-
-    for (const auto& trade :
-        journal.GetTrades())
-    {
         std::cout
-            << "Trade #"
-            << tradeIndex++
+            << std::endl
+            << "=== BANNY STATISTICS ==="
             << std::endl;
 
         std::cout
-            << "Route: "
-            << trade.route
+            << "WebSocket cache symbols: "
+            << marketData.tickers.size()
             << std::endl;
 
         std::cout
-            << "Start Balance: "
-            << trade.startBalance
-            << " USDT"
+            << "Total Triangles: "
+            << stats.totalTriangles
             << std::endl;
 
         std::cout
-            << "End Balance: "
-            << trade.endBalance
-            << " USDT"
+            << "Analyzed: "
+            << stats.analyzedTriangles
             << std::endl;
 
         std::cout
-            << "Profit: "
-            << trade.profitUsdt
-            << " USDT"
+            << "Missing Tickers: "
+            << stats.missingTickerTriangles
             << std::endl;
 
         std::cout
-            << "Profit Percent: "
-            << trade.profitPercent
+            << "Profitable: "
+            << stats.profitableTriangles
+            << std::endl;
+
+        std::cout
+            << "Rejected: "
+            << stats.rejectedTriangles
+            << std::endl;
+
+        std::cout
+            << "Best Profit: "
+            << stats.bestProfitPercent
             << "%"
             << std::endl;
 
         std::cout
+            << "Best Route: "
+            << stats.bestRoute
             << std::endl;
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(
+                config.ScanIntervalMs));
     }
-
-    // Scanner scanner;
-
-    // scanner.Scan();
 
     logger.Info("Core initialized");
 
