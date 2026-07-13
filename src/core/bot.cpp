@@ -79,19 +79,33 @@ void Bot::Run()
 
     logger.Info("Config loaded");
 
+    std::cout
+        << "DEBUG A"
+        << std::endl;
+
     BinanceSymbolRegistryProvider symbolProvider;
+
+    std::cout
+        << "DEBUG B1"
+        << std::endl;
 
     auto registry =
         symbolProvider.GetSymbols();
 
+    std::cout
+        << "DEBUG B2"
+        << std::endl;
+
     std::vector<std::string> wsSymbols;
 
-    for (size_t i = 0;
-        i < std::min<size_t>(750, registry.pairs.size());
-        ++i)
+    std::cout
+        << "DEBUG C"
+        << std::endl;
+
+    for (const auto& pair : registry.pairs)
     {
         wsSymbols.push_back(
-            registry.pairs[i].symbol);
+            pair.symbol);
     }
 
     WebSocketMarketDataProvider wsProvider;
@@ -114,10 +128,8 @@ void Bot::Run()
         << "STEP 2"
         << std::endl;
 
-    for (int i = 0; i < 1000; ++i)
-    {
-        wsProvider.ProcessNextMessage();
-    }
+    std::this_thread::sleep_for(
+        std::chrono::seconds(3));
 
     std::cout
         << "STEP 3"
@@ -150,10 +162,12 @@ void Bot::Run()
 
     std::vector<std::string> symbols;
 
-    for (const auto& pair : registry.pairs)
+    for (size_t i = 0;
+        i < std::min<size_t>(1200, registry.pairs.size());
+        ++i)
     {
-        symbols.push_back(
-            pair.symbol);
+        wsSymbols.push_back(
+            registry.pairs[i].symbol);
     }
 
     std::cout
@@ -210,10 +224,7 @@ void Bot::Run()
 
     while (true)
     {
-        for (int i = 0; i < 500; ++i)
-        {
-            wsProvider.ProcessNextMessage();
-        }
+
 
         auto marketData =
             wsProvider.GetSnapshot();

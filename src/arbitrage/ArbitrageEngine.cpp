@@ -40,21 +40,30 @@ Statistics ArbitrageEngine::Analyze(
         const std::string& pair3 =
             triangle.pairCA.symbol;
 
-        if (marketData.tickers.find(pair1) ==
+        auto it1 =
+            marketData.tickers.find(pair1);
+
+        if (it1 ==
             marketData.tickers.end())
         {
             stats.missingTickerTriangles++;
             continue;
         }
 
-        if (marketData.tickers.find(pair2) ==
+        auto it2 =
+            marketData.tickers.find(pair2);
+
+        if (it2 ==
             marketData.tickers.end())
         {
             stats.missingTickerTriangles++;
             continue;
         }
 
-        if (marketData.tickers.find(pair3) ==
+        auto it3 =
+            marketData.tickers.find(pair3);
+
+        if (it3 ==
             marketData.tickers.end())
         {
             stats.missingTickerTriangles++;
@@ -62,16 +71,13 @@ Statistics ArbitrageEngine::Analyze(
         }
 
         const auto& ticker1 =
-            marketData.tickers.at(
-                pair1);
+            it1->second;
 
         const auto& ticker2 =
-            marketData.tickers.at(
-                pair2);
+            it2->second;
 
         const auto& ticker3 =
-            marketData.tickers.at(
-                pair3);
+            it3->second;
 
         TradePrices prices;
 
@@ -216,26 +222,6 @@ Statistics ArbitrageEngine::Analyze(
             << std::endl
             << std::endl;
 
-        if (result.profitPercent > bestProfit)
-        {
-            bestProfit =
-                result.profitPercent;
-
-            stats.bestProfitPercent =
-                result.profitPercent;
-
-            stats.bestRoute =
-                triangle.assetA +
-                " -> " +
-                triangle.assetB +
-                " -> " +
-                triangle.assetC +
-                " -> " +
-                triangle.assetA;
-
-            bestTriangle =
-                triangle;
-        }
     }
 
     std::cout

@@ -74,6 +74,16 @@ bool BinanceWebSocketClient::Connect(
         << "Connected to Binance host"
         << std::endl;
 
+    static int clientIndex = 0;
+
+    int currentClient =
+        ++clientIndex;
+
+    std::cout
+        << "CLIENT "
+        << currentClient
+        << std::endl;
+
     std::cout
         << "Streams count: "
         << symbols.size()
@@ -171,8 +181,12 @@ bool BinanceWebSocketClient::Connect(
 
     if (webSocket == nullptr)
     {
+        DWORD error =
+            GetLastError();
+
         std::cout
-            << "WebSocket upgrade failed"
+            << "WebSocket upgrade failed. Error: "
+            << error
             << std::endl;
 
         return false;
