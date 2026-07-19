@@ -23,6 +23,8 @@ static std::string GetTimeStamp()
 
 bool Logger::Start()
 {
+    std::cout << "Log file: " << m_logFile << std::endl;
+
     std::ofstream log(m_logFile, std::ios::app);
 
     if (!log.is_open())

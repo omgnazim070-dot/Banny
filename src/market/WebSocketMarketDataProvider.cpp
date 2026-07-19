@@ -11,6 +11,7 @@ using json = nlohmann::json;
 namespace
 {
     void WorkerLoop(
+        int clientId,
         BinanceWebSocketClient* client,
         MarketDataCache* cache,
         std::atomic<bool>* running)
@@ -36,6 +37,22 @@ namespace
             }
             catch (...)
             {
+                static int parseErrors = 0;
+
+                if (parseErrors < 10)
+                {
+                    std::cout
+                        << "JSON PARSE ERROR:"
+                        << std::endl;
+
+                    std::cout
+                        << message
+                        << std::endl
+                        << std::endl;
+                }
+
+                ++parseErrors;
+
                 continue;
             }
 
@@ -51,6 +68,22 @@ namespace
                 !payload.contains("b") ||
                 !payload.contains("a"))
             {
+                static int invalidPayload = 0;
+
+                if (invalidPayload < 10)
+                {
+                    std::cout
+                        << "INVALID PAYLOAD:"
+                        << std::endl;
+
+                    std::cout
+                        << payload.dump(2)
+                        << std::endl
+                        << std::endl;
+                }
+
+                ++invalidPayload;
+
                 continue;
             }
 
@@ -68,6 +101,21 @@ namespace
                     payload["a"].get<std::string>());
 
             cache->Update(ticker);
+
+            static std::atomic<int> updates[8];
+
+            int count = ++updates[clientId - 1];
+
+            if (count % 5000 == 0)
+            {
+                std::cout
+                    << "Client "
+                    << clientId
+                    << " received "
+                    << count
+                    << " ticker updates"
+                    << std::endl;
+            }
         }
     }
 }
@@ -132,13 +180,64 @@ bool WebSocketMarketDataProvider::Start(
     std::cout << "Client7 symbols: " << symbols7.size() << std::endl;
     std::cout << "Client8 symbols: " << symbols8.size() << std::endl;
 
+    std::cout << "\nClient8 first: "
+        << symbols8.front()
+        << std::endl;
+
+    std::cout << "Client8 last: "
+        << symbols8.back()
+        << std::endl;
+
+    std::cout << "\n===== CLIENT RANGES =====\n";
+
+    auto printRange = [](const std::string& name,
+        const std::vector<std::string>& list)
+        {
+            if (list.empty())
+                return;
+
+            std::cout
+                << name
+                << " | first = "
+                << list.front()
+                << " | last = "
+                << list.back()
+                << std::endl;
+        };
+
+    printRange("Client1", symbols1);
+    printRange("Client2", symbols2);
+    printRange("Client3", symbols3);
+    printRange("Client4", symbols4);
+    printRange("Client5", symbols5);
+    printRange("Client6", symbols6);
+    printRange("Client7", symbols7);
+    printRange("Client8", symbols8);
+
+    std::cout << "\n=== Connecting OBJECT client1 ===\n";
     if (!client1.Connect(symbols1)) return false;
+
+    std::cout << "\n=== Connecting OBJECT client2 ===\n";
     if (!client2.Connect(symbols2)) return false;
+
+    std::cout << "\n=== Connecting OBJECT client3 ===\n";
     if (!client3.Connect(symbols3)) return false;
+
+    std::cout << "\n=== Connecting OBJECT client4 ===\n";
     if (!client4.Connect(symbols4)) return false;
+
+    std::cout << "\n=== Connecting OBJECT client5 ===\n";
     if (!client5.Connect(symbols5)) return false;
-    if (!client6.Connect(symbols6)) return false;
-    if (!client7.Connect(symbols7)) return false;
+
+    std::cout << "\n=== Connecting OBJECT client7 (using symbols6) ===\n";
+    if (!client7.Connect(symbols6)) return false;
+
+    std::cout << "\n=== Connecting OBJECT client6 (using symbols7) ===\n";
+    if (!client6.Connect(symbols7))
+    {
+        return false;
+    }
+
     if (!client8.Connect(symbols8))
     {
         std::cout
@@ -148,14 +247,14 @@ bool WebSocketMarketDataProvider::Start(
 
     running = true;
 
-    worker1 = std::thread(WorkerLoop, &client1, &cache, &running);
-    worker2 = std::thread(WorkerLoop, &client2, &cache, &running);
-    worker3 = std::thread(WorkerLoop, &client3, &cache, &running);
-    worker4 = std::thread(WorkerLoop, &client4, &cache, &running);
-    worker5 = std::thread(WorkerLoop, &client5, &cache, &running);
-    worker6 = std::thread(WorkerLoop, &client6, &cache, &running);
-    worker7 = std::thread(WorkerLoop, &client7, &cache, &running);
-    //worker8 = std::thread(WorkerLoop, &client8, &cache, &running);
+    worker1 = std::thread(WorkerLoop, 1, &client1, &cache, &running);
+    worker2 = std::thread(WorkerLoop, 2, &client2, &cache, &running);
+    worker3 = std::thread(WorkerLoop, 3, &client3, &cache, &running);
+    worker4 = std::thread(WorkerLoop, 4, &client4, &cache, &running);
+    worker5 = std::thread(WorkerLoop, 5, &client5, &cache, &running);
+    worker6 = std::thread(WorkerLoop, 6, &client6, &cache, &running);
+    worker7 = std::thread(WorkerLoop, 7, &client7, &cache, &running);
+    worker8 = std::thread(WorkerLoop, 8, &client8, &cache, &running);
 
     return true;
 }

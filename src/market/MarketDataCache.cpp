@@ -1,13 +1,20 @@
 #include "MarketDataCache.h"
 
+#include <chrono>
+
 void MarketDataCache::Update(
     const Ticker& ticker)
 {
     std::lock_guard<std::mutex> lock(
         mutex);
 
+    Ticker updatedTicker = ticker;
+
+    updatedTicker.lastUpdate =
+        std::chrono::steady_clock::now();
+
     marketData.tickers[
-        ticker.symbol] = ticker;
+        updatedTicker.symbol] = updatedTicker;
 }
 
 MarketData MarketDataCache::GetSnapshot()

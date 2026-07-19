@@ -2,6 +2,9 @@
 
 #include <iostream>
 
+#include <algorithm>
+#include <chrono>
+
 Statistics ArbitrageEngine::Analyze(
     const std::vector<Triangle>& triangles,
     const MarketData& marketData,
@@ -79,6 +82,33 @@ Statistics ArbitrageEngine::Analyze(
         const auto& ticker3 =
             it3->second;
 
+        auto newest =
+            std::max({
+                ticker1.lastUpdate,
+                ticker2.lastUpdate,
+                ticker3.lastUpdate
+                });
+
+        auto oldest =
+            std::min({
+                ticker1.lastUpdate,
+                ticker2.lastUpdate,
+                ticker3.lastUpdate
+                });
+
+        auto age =
+            std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+                newest - oldest);
+
+        if (age.count() > 200)
+        {
+            stats.staleTriangles++;
+            continue;
+        }
+
+        stats.validTriangles++;
+
         TradePrices prices;
 
         /*
@@ -136,6 +166,34 @@ Statistics ArbitrageEngine::Analyze(
                 settings.commissionPercent / 100.0,
                 settings.slippagePercent / 100.0);
 
+        if (triangle.assetA == "BTC" &&
+            triangle.assetB == "USDT" &&
+            triangle.assetC == "BRL")
+        {
+            std::cout << "\n========== DEBUG ==========\n";
+
+            std::cout << "Route: "
+                << triangle.assetA << " -> "
+                << triangle.assetB << " -> "
+                << triangle.assetC << " -> "
+                << triangle.assetA << std::endl;
+
+            std::cout << "Pair1: " << pair1
+                << " buy=" << std::boolalpha << prices.buy1
+                << " price=" << prices.price1 << std::endl;
+
+            std::cout << "Pair2: " << pair2
+                << " buy=" << std::boolalpha << prices.buy2
+                << " price=" << prices.price2 << std::endl;
+
+            std::cout << "Pair3: " << pair3
+                << " buy=" << std::boolalpha << prices.buy3
+                << " price=" << prices.price3 << std::endl;
+
+            std::cout << "End: " << result.endAmount << std::endl;
+            std::cout << "Profit: " << result.profitPercent << "%\n";
+        }
+
         if (result.profitPercent > bestProfit)
         {
             bestProfit =
@@ -155,6 +213,15 @@ Statistics ArbitrageEngine::Analyze(
 
             bestTriangle =
                 triangle;
+
+            stats.bestTriangle =
+                triangle;
+
+            stats.bestPrices =
+                prices;
+
+            stats.bestResult =
+                result;
         }
 
         if (result.profitPercent <

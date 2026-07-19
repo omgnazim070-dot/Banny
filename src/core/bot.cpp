@@ -79,33 +79,34 @@ void Bot::Run()
 
     logger.Info("Config loaded");
 
-    std::cout
-        << "DEBUG A"
-        << std::endl;
-
     BinanceSymbolRegistryProvider symbolProvider;
-
-    std::cout
-        << "DEBUG B1"
-        << std::endl;
 
     auto registry =
         symbolProvider.GetSymbols();
 
-    std::cout
-        << "DEBUG B2"
-        << std::endl;
-
     std::vector<std::string> wsSymbols;
 
-    std::cout
-        << "DEBUG C"
-        << std::endl;
 
     for (const auto& pair : registry.pairs)
     {
         wsSymbols.push_back(
             pair.symbol);
+    }
+
+    std::cout
+        << "\n===== BOT SYMBOL CHECK ====="
+        << std::endl;
+
+    for (const auto& s : wsSymbols)
+    {
+        if (s.find_first_not_of(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") != std::string::npos)
+        {
+            std::cout
+                << "BOT BAD SYMBOL: "
+                << s
+                << std::endl;
+        }
     }
 
     WebSocketMarketDataProvider wsProvider;
@@ -264,6 +265,16 @@ void Bot::Run()
             << std::endl;
 
         std::cout
+            << "Valid Triangles: "
+            << stats.validTriangles
+            << std::endl;
+
+        std::cout
+            << "Stale Triangles: "
+            << stats.staleTriangles
+            << std::endl;
+
+        std::cout
             << "Profitable: "
             << stats.profitableTriangles
             << std::endl;
@@ -283,6 +294,96 @@ void Bot::Run()
             << "Best Route: "
             << stats.bestRoute
             << std::endl;
+
+        std::cout
+            << "\n===== BEST TRIANGLE ====="
+            << std::endl;
+
+        std::cout
+            << "Pair 1: "
+            << stats.bestTriangle.pairAB.symbol
+            << std::endl;
+
+        std::cout
+            << "Pair 2: "
+            << stats.bestTriangle.pairBC.symbol
+            << std::endl;
+
+        std::cout
+            << "Pair 3: "
+            << stats.bestTriangle.pairCA.symbol
+            << std::endl;
+
+        std::cout
+            << "Price 1: "
+            << stats.bestPrices.price1
+            << std::endl;
+
+        std::cout
+            << "Buy 1: "
+            << std::boolalpha
+            << stats.bestPrices.buy1
+            << std::endl;
+
+        std::cout
+            << "Buy 2: "
+            << std::boolalpha
+            << stats.bestPrices.buy2
+            << std::endl;
+
+        std::cout
+            << "Buy 3: "
+            << std::boolalpha
+            << stats.bestPrices.buy3
+            << std::endl;
+
+        std::cout
+            << "Price 2: "
+            << stats.bestPrices.price2
+            << std::endl;
+
+        std::cout
+            << "Price 3: "
+            << stats.bestPrices.price3
+            << std::endl;
+
+        std::cout
+            << "Start Amount: "
+            << stats.bestResult.startAmount
+            << std::endl;
+
+        std::cout
+            << "End Amount: "
+            << stats.bestResult.endAmount
+            << std::endl;
+
+        std::cout
+            << "\n===== MISSING SYMBOLS ====="
+            << std::endl;
+
+        int printed = 0;
+
+        for (const auto& pair : registry.pairs)
+        {
+            if (marketData.tickers.find(pair.symbol) ==
+                marketData.tickers.end())
+            {
+                std::cout
+                    << pair.symbol
+                    << std::endl;
+
+                ++printed;
+
+                if (printed >= 100)
+                {
+                    std::cout
+                        << "... more ..."
+                        << std::endl;
+
+                    break;
+                }
+            }
+        }
 
         std::this_thread::sleep_for(
             std::chrono::milliseconds(

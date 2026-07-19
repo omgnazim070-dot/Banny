@@ -24,6 +24,11 @@ bool BinanceWebSocketClient::Connect(
                     static_cast<unsigned char>(c)));
         }
 
+        std::cout
+            << "STREAM: "
+            << symbol
+            << std::endl;
+
         streamPath +=
             symbol +
             "@bookTicker";
@@ -74,14 +79,11 @@ bool BinanceWebSocketClient::Connect(
         << "Connected to Binance host"
         << std::endl;
 
-    static int clientIndex = 0;
-
-    int currentClient =
-        ++clientIndex;
+    static int connectCall = 0;
 
     std::cout
-        << "CLIENT "
-        << currentClient
+        << "CONNECT CALL #"
+        << ++connectCall
         << std::endl;
 
     std::cout
@@ -168,6 +170,55 @@ bool BinanceWebSocketClient::Connect(
             << std::endl;
 
         return false;
+    }
+
+    DWORD statusCode = 0;
+    DWORD size = sizeof(statusCode);
+
+    if (WinHttpQueryHeaders(
+        request,
+        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_HEADER_NAME_BY_INDEX,
+        &statusCode,
+        &size,
+        WINHTTP_NO_HEADER_INDEX))
+    {
+        std::cout
+            << "HTTP STATUS: "
+            << statusCode
+            << std::endl;
+    }
+
+    if (statusCode != 101)
+    {
+        DWORD availableSize = 0;
+
+        if (WinHttpQueryDataAvailable(
+            request,
+            &availableSize))
+        {
+            if (availableSize > 0)
+            {
+                std::vector<char> buffer(
+                    availableSize + 1);
+
+                DWORD bytesRead = 0;
+
+                if (WinHttpReadData(
+                    request,
+                    buffer.data(),
+                    availableSize,
+                    &bytesRead))
+                {
+                    buffer[bytesRead] = '\0';
+
+                    std::cout
+                        << "HTTP BODY: "
+                        << buffer.data()
+                        << std::endl;
+                }
+            }
+        }
     }
 
     std::cout
@@ -306,38 +357,56 @@ bool BinanceWebSocketClient::Receive(
         return false;
     }
 
+    message.clear();
+
     char buffer[65536];
 
-    DWORD bytesRead = 0;
-
-    WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
-
-    DWORD result =
-        WinHttpWebSocketReceive(
-            webSocket,
-            buffer,
-            sizeof(buffer),
-            &bytesRead,
-            &bufferType);
-
-    if (result != NO_ERROR)
+    while (true)
     {
-        if (result != 4317)
+        DWORD bytesRead = 0;
+
+        WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
+
+        DWORD result =
+            WinHttpWebSocketReceive(
+                webSocket,
+                buffer,
+                sizeof(buffer),
+                &bytesRead,
+                &bufferType);
+
+        if (result != NO_ERROR)
         {
-            std::cout
-                << "Receive failed: "
-                << result
-                << std::endl;
+            if (result != 4317)
+            {
+                std::cout
+                    << "Receive failed: "
+                    << result
+                    << std::endl;
+            }
+
+            return false;
         }
 
-        return false;
+        message.append(buffer, bytesRead);
+
+        if (bufferType ==
+            WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE ||
+            bufferType ==
+            WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE)
+        {
+            return true;
+        }
+
+        if (bufferType ==
+            WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)
+        {
+            return false;
+        }
+
+        // Если это *_FRAGMENT_BUFFER_TYPE,
+        // продолжаем читать следующую часть сообщения.
     }
-
-    message.assign(
-        buffer,
-        bytesRead);
-
-    return true;
 }
 
 bool BinanceWebSocketClient::IsConnected() const

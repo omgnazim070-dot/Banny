@@ -32,7 +32,10 @@ add_executable(Banny
     src/market/MarketMonitor.cpp "src/binance/BinanceWebSocketClient.cpp"
     src/binance/BinanceWebSocketClient.cpp "src/market/MarketDataCache.cpp"
     src/market/MarketDataCache.h
-    src/market/MarketDataCache.cpp "src/market/WebSocketMarketDataProvider.h" "src/market/WebSocketMarketDataProvider.cpp")
+    src/market/MarketDataCache.cpp
+    src/market/WebSocketMarketDataProvider.h
+    src/market/WebSocketMarketDataProvider.cpp
+)
 
     target_link_libraries(
     Banny

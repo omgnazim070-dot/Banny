@@ -167,6 +167,27 @@ BinanceExchangeInfoClient::GetSymbols()
         pair.quoteAsset =
             item["quoteAsset"].get<std::string>();
 
+        auto isAscii =
+            [](const std::string& text)
+            {
+                for (unsigned char c : text)
+                {
+                    if (c > 127)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            };
+
+        if (!isAscii(pair.symbol) ||
+            !isAscii(pair.baseAsset) ||
+            !isAscii(pair.quoteAsset))
+        {
+            continue;
+        }
+
         pairs.push_back(pair);
     }
 
