@@ -35,6 +35,15 @@
 #include <iomanip>
 #include "../market/WebSocketMarketDataProvider.h"
 
+#include "../index/SymbolRegistryIndex.h"
+#include "../index/IndexedTriangleBuilder.h"
+#include "../index/TriangleIndex.h"
+#include "../index/DirtyQueue.h"
+#include "../index/IndexedMarketCache.h"
+#include "../index/RealtimeIndexer.h"
+
+#include <cmath>
+
 using json = nlohmann::json;
 
 void Bot::Run()
@@ -109,7 +118,90 @@ void Bot::Run()
         }
     }
 
+    MarketSnapshotLogger snapshotLogger;
+
+    std::cout
+        << "Pairs loaded: "
+        << registry.pairs.size()
+        << std::endl;
+
+    if (!registry.pairs.empty())
+    {
+        const auto& pair =
+            registry.pairs.front();
+
+        std::cout
+            << pair.symbol
+            << " | "
+            << pair.baseAsset
+            << " | "
+            << pair.quoteAsset
+            << std::endl;
+    }
+
+    std::vector<std::string> symbols;
+
+    std::cout
+        << "Registry pairs: "
+        << registry.pairs.size()
+        << std::endl;
+
+    for (size_t i = 0;
+        i < std::min<size_t>(20, registry.pairs.size());
+        ++i)
+    {
+        std::cout
+            << registry.pairs[i].symbol
+            << std::endl;;
+    }
+
+    std::cout
+        << "STEP 4"
+        << std::endl;
+
+    TriangleBuilder builder;
+
+    auto triangles =
+        builder.Build(
+            registry.pairs);
+
+    SymbolRegistryIndex symbolIndex;
+
+    IndexedTriangleBuilder indexedBuilder;
+
+    auto indexedTriangles =
+        indexedBuilder.Build(
+            triangles,
+            symbolIndex);
+
+    std::cout
+        << "Indexed symbols after build: "
+        << symbolIndex.Size()
+        << std::endl;
+
+    TriangleIndex triangleIndex;
+
+    triangleIndex.Build(
+        indexedTriangles,
+        symbolIndex.Size());
+
+    IndexedMarketCache indexedCache;
+
+    indexedCache.Resize(
+        symbolIndex.Size());
+
+    DirtyQueue dirtyQueue;
+
+    RealtimeIndexer realtimeIndexer(
+        symbolIndex,
+        triangleIndex,
+        dirtyQueue,
+        indexedCache);
+
     WebSocketMarketDataProvider wsProvider;
+
+    wsProvider.SetRealtimeIndexer(
+        &realtimeIndexer);
 
     if (!wsProvider.Start(
         wsSymbols))
@@ -140,60 +232,34 @@ void Bot::Run()
         << "Initial market warmup completed"
         << std::endl;
 
-    MarketSnapshotLogger snapshotLogger;
-
-    std::cout
-        << "Pairs loaded: "
-        << registry.pairs.size()
-        << std::endl;
-
-    if (!registry.pairs.empty())
+    for (SymbolId symbol = 0;
+        symbol < symbolIndex.Size();
+        ++symbol)
     {
-        const auto& pair =
-            registry.pairs.front();
+        const auto& list =
+            triangleIndex.GetTriangles(
+                symbol);
 
-        std::cout
-            << pair.symbol
-            << " | "
-            << pair.baseAsset
-            << " | "
-            << pair.quoteAsset
-            << std::endl;
-    }
-
-    std::vector<std::string> symbols;
-
-    for (size_t i = 0;
-        i < std::min<size_t>(1200, registry.pairs.size());
-        ++i)
-    {
-        wsSymbols.push_back(
-            registry.pairs[i].symbol);
+        for (TriangleId triangle : list)
+        {
+            dirtyQueue.Mark(
+                triangle);
+        }
     }
 
     std::cout
-        << "Registry pairs: "
-        << registry.pairs.size()
+        << "Dirty queue initialized"
         << std::endl;
-
-    for (size_t i = 0;
-        i < std::min<size_t>(20, registry.pairs.size());
-        ++i)
-    {
-        std::cout
-            << registry.pairs[i].symbol
-            << std::endl;;
-    }
 
     std::cout
-        << "STEP 4"
+        << "Indexed symbols: "
+        << symbolIndex.Size()
         << std::endl;
 
-    TriangleBuilder builder;
-
-    auto triangles =
-        builder.Build(
-            registry.pairs);
+    std::cout
+        << "Indexed triangles: "
+        << indexedTriangles.size()
+        << std::endl;
 
     std::cout
         << std::endl
@@ -223,6 +289,8 @@ void Bot::Run()
 
     MarketMonitor monitor;
 
+    double lastBestProfit = -999.0;
+
     while (true)
     {
 
@@ -233,11 +301,71 @@ void Bot::Run()
         snapshotLogger.Save(
             marketData);
 
+        auto analysisStart =
+            std::chrono::high_resolution_clock::now();
+
         auto stats =
-            monitor.Run(
-                triangles,
-                marketData,
+            monitor.RunDirty(
+                indexedTriangles,
+                dirtyQueue,
+                indexedCache,
+                symbolIndex,
                 settings);
+
+        auto analysisEnd =
+            std::chrono::high_resolution_clock::now();
+
+        auto analysisTime =
+            std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+                analysisEnd - analysisStart);
+
+
+        std::cout
+            << "Analysis time: "
+            << analysisTime.count()
+            << " ms"
+            << std::endl;
+
+
+        if (analysisTime.count() > 0)
+        {
+            std::cout
+                << "Triangles/sec: "
+                <<
+                (stats.analyzedTriangles * 1000)
+                /
+                analysisTime.count()
+                << std::endl;
+        }
+
+        if (std::abs(
+            stats.bestProfitPercent - lastBestProfit)
+        > 0.000001)
+        {
+            std::cout
+                << "\n===== NEW BEST ====="
+                << std::endl;
+
+            std::cout
+                << "Route: "
+                << stats.bestRoute
+                << std::endl;
+
+            std::cout
+                << "Profit: "
+                << stats.bestProfitPercent
+                << "%"
+                << std::endl;
+
+            std::cout
+                << "End Amount: "
+                << stats.bestResult.endAmount
+                << std::endl;
+
+            lastBestProfit =
+                stats.bestProfitPercent;
+        }
 
         std::cout
             << std::endl
@@ -257,11 +385,6 @@ void Bot::Run()
         std::cout
             << "Analyzed: "
             << stats.analyzedTriangles
-            << std::endl;
-
-        std::cout
-            << "Missing Tickers: "
-            << stats.missingTickerTriangles
             << std::endl;
 
         std::cout
@@ -295,6 +418,7 @@ void Bot::Run()
             << stats.bestRoute
             << std::endl;
 
+        /*
         std::cout
             << "\n===== BEST TRIANGLE ====="
             << std::endl;
@@ -356,34 +480,7 @@ void Bot::Run()
             << "End Amount: "
             << stats.bestResult.endAmount
             << std::endl;
-
-        std::cout
-            << "\n===== MISSING SYMBOLS ====="
-            << std::endl;
-
-        int printed = 0;
-
-        for (const auto& pair : registry.pairs)
-        {
-            if (marketData.tickers.find(pair.symbol) ==
-                marketData.tickers.end())
-            {
-                std::cout
-                    << pair.symbol
-                    << std::endl;
-
-                ++printed;
-
-                if (printed >= 100)
-                {
-                    std::cout
-                        << "... more ..."
-                        << std::endl;
-
-                    break;
-                }
-            }
-        }
+        */
 
         std::this_thread::sleep_for(
             std::chrono::milliseconds(

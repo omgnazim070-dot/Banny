@@ -14,6 +14,7 @@ namespace
         int clientId,
         BinanceWebSocketClient* client,
         MarketDataCache* cache,
+        RealtimeIndexer* realtimeIndexer,
         std::atomic<bool>* running)
     {
         while (running->load())
@@ -101,6 +102,14 @@ namespace
                     payload["a"].get<std::string>());
 
             cache->Update(ticker);
+
+            if (realtimeIndexer != nullptr)
+            {
+                realtimeIndexer->OnTicker(
+                    ticker.symbol,
+                    ticker.bidPrice,
+                    ticker.askPrice);
+            }
 
             static std::atomic<int> updates[8];
 
@@ -247,14 +256,14 @@ bool WebSocketMarketDataProvider::Start(
 
     running = true;
 
-    worker1 = std::thread(WorkerLoop, 1, &client1, &cache, &running);
-    worker2 = std::thread(WorkerLoop, 2, &client2, &cache, &running);
-    worker3 = std::thread(WorkerLoop, 3, &client3, &cache, &running);
-    worker4 = std::thread(WorkerLoop, 4, &client4, &cache, &running);
-    worker5 = std::thread(WorkerLoop, 5, &client5, &cache, &running);
-    worker6 = std::thread(WorkerLoop, 6, &client6, &cache, &running);
-    worker7 = std::thread(WorkerLoop, 7, &client7, &cache, &running);
-    worker8 = std::thread(WorkerLoop, 8, &client8, &cache, &running);
+    worker1 = std::thread(WorkerLoop, 1, &client1, &cache, realtimeIndexer, &running);
+    worker2 = std::thread(WorkerLoop, 2, &client2, &cache, realtimeIndexer, &running);
+    worker3 = std::thread(WorkerLoop, 3, &client3, &cache, realtimeIndexer, &running);
+    worker4 = std::thread(WorkerLoop, 4, &client4, &cache, realtimeIndexer, &running);
+    worker5 = std::thread(WorkerLoop, 5, &client5, &cache, realtimeIndexer, &running);
+    worker6 = std::thread(WorkerLoop, 6, &client6, &cache, realtimeIndexer, &running);
+    worker7 = std::thread(WorkerLoop, 7, &client7, &cache, realtimeIndexer, &running);
+    worker8 = std::thread(WorkerLoop, 8, &client8, &cache, realtimeIndexer, &running);
 
     return true;
 }
@@ -398,4 +407,10 @@ void WebSocketMarketDataProvider::Stop()
     client6.Disconnect();
     client7.Disconnect();
     client8.Disconnect();
+}
+
+void WebSocketMarketDataProvider::SetRealtimeIndexer(
+    RealtimeIndexer* indexer)
+{
+    realtimeIndexer = indexer;
 }

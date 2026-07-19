@@ -24,11 +24,6 @@ bool BinanceWebSocketClient::Connect(
                     static_cast<unsigned char>(c)));
         }
 
-        std::cout
-            << "STREAM: "
-            << symbol
-            << std::endl;
-
         streamPath +=
             symbol +
             "@bookTicker";
@@ -84,17 +79,7 @@ bool BinanceWebSocketClient::Connect(
     std::cout
         << "CONNECT CALL #"
         << ++connectCall
-        << std::endl;
-
-    std::cout
-        << "Streams count: "
-        << symbols.size()
-        << std::endl;
-
-    std::cout
-        << "Path length: "
-        << streamPath.size()
-        << std::endl;
+        << std::endl;;
 
     request = WinHttpOpenRequest(
         connection,
@@ -250,16 +235,6 @@ bool BinanceWebSocketClient::Connect(
         << "WebSocket connected"
         << std::endl;
 
-    std::wcout
-        << L"Host: "
-        << host
-        << std::endl;
-
-    std::wcout
-        << L"Path: "
-        << path
-        << std::endl;
-
     connected = true;
 
     std::cout
@@ -391,9 +366,9 @@ bool BinanceWebSocketClient::Receive(
         message.append(buffer, bytesRead);
 
         if (bufferType ==
-            WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE ||
+                WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE ||
             bufferType ==
-            WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE)
+                WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE)
         {
             return true;
         }

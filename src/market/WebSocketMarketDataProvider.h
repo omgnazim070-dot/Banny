@@ -7,6 +7,7 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include "../index/RealtimeIndexer.h"
 
 class WebSocketMarketDataProvider
 {
@@ -18,6 +19,9 @@ public:
     void ProcessNextMessage();
 
     MarketData GetSnapshot();
+
+    void SetRealtimeIndexer(
+        RealtimeIndexer* indexer);
 
     void Stop();
 
@@ -58,4 +62,6 @@ private:
     std::thread worker8;
 
     std::atomic<bool> running = false;
+
+    RealtimeIndexer* realtimeIndexer = nullptr;
 };
