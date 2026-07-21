@@ -1,5 +1,5 @@
 #include "BinanceWebSocketClient.h"
-
+#include <atomic>
 #include <iostream>
 
 bool BinanceWebSocketClient::Connect(
@@ -74,12 +74,17 @@ bool BinanceWebSocketClient::Connect(
         << "Connected to Binance host"
         << std::endl;
 
-    static int connectCall = 0;
+    static std::atomic<int> connectCall{ 0 };
+
+    const int callNumber =
+        connectCall.fetch_add(
+            1,
+            std::memory_order_relaxed) + 1;
 
     std::cout
         << "CONNECT CALL #"
-        << ++connectCall
-        << std::endl;;
+        << callNumber
+        << std::endl;
 
     request = WinHttpOpenRequest(
         connection,

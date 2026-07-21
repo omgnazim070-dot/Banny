@@ -1,14 +1,16 @@
 #pragma once
 
-#include "../triangle/TriangleBuilder.h"
-#include "../scanner/MarketData.h"
+#include <vector>
+
 #include "../config/TradingSettings.h"
 #include "../core/Statistics.h"
-
-#include "../index/IndexedTriangleBuilder.h"
-#include "../index/TriangleIndex.h"
+#include "../core/WorkerIntervalStats.h"
 #include "../index/DirtyQueue.h"
 #include "../index/IndexedMarketCache.h"
+#include "../index/TriangleIndex.h"
+#include "../index/TriangleRuntimeState.h"
+#include "../scanner/MarketData.h"
+#include "../triangle/TriangleBuilder.h"
 
 class MarketMonitor
 {
@@ -19,11 +21,12 @@ public:
         const MarketData& marketData,
         const TradingSettings& settings);
 
-
-    Statistics RunDirty(
+    void RunBatch(
         const std::vector<IndexedTriangle>& indexedTriangles,
-        DirtyQueue& dirtyQueue,
+        const std::vector<DirtyTask>& tasks,
+        DirtyQueue& queue,
         IndexedMarketCache& marketCache,
-        SymbolRegistryIndex& symbolIndex,
-        const TradingSettings& settings);
+        std::vector<TriangleRuntimeState>& runtimeStates,
+        const TradingSettings& settings,
+        WorkerIntervalStats& stats);
 };

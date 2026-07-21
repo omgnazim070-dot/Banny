@@ -1,17 +1,30 @@
 #pragma once
 
-#include "../binance/BinanceWebSocketClient.h"
-#include "MarketDataCache.h"
-
-#include <vector>
+#include <array>
+#include <atomic>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <atomic>
+#include <vector>
+
+#include "../binance/BinanceWebSocketClient.h"
 #include "../index/RealtimeIndexer.h"
+#include "MarketDataCache.h"
+#include "WebSocketIntervalStats.h"
 
 class WebSocketMarketDataProvider
 {
 public:
+
+    struct WorkerStatsSlot
+    {
+        std::mutex mutex;
+
+        WebSocketIntervalStats pending;
+    };
+
+    WebSocketMarketDataProvider();
 
     bool Start(
         const std::vector<std::string>& symbols);
@@ -19,6 +32,8 @@ public:
     void ProcessNextMessage();
 
     MarketData GetSnapshot();
+
+    WebSocketIntervalStats TakeIntervalStats();
 
     void SetRealtimeIndexer(
         RealtimeIndexer* indexer);
@@ -64,4 +79,8 @@ private:
     std::atomic<bool> running = false;
 
     RealtimeIndexer* realtimeIndexer = nullptr;
+
+    std::array<
+        std::unique_ptr<WorkerStatsSlot>,
+        8> workerStatsSlots;
 };

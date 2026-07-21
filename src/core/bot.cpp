@@ -1,6 +1,10 @@
 #include "Bot.h"
 
 #include <iostream>
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include <numeric>
 #include <vector>
 
 #include "../config/Config.h"
@@ -19,18 +23,19 @@
 #include "../paper/PaperTradeJournal.h"
 
 #include "../paper/PaperTradeCsvLogger.h"
-#include "../market/MarketSnapshotLogger.h"
 
 #include "../market/BinanceSymbolRegistryProvider.h"
 
 #include <thread>
+#include <atomic>
+#include <cstdint>
+#include <mutex>
 #include <chrono>
 
 #include "../market/MarketMonitor.h"
 #include "../binance/BinanceWebSocketClient.h"
 
 #include "../market/MarketDataCache.h"
-#include "../../third_party/json/json.hpp"
 
 #include <iomanip>
 #include "../market/WebSocketMarketDataProvider.h"
@@ -41,10 +46,18 @@
 #include "../index/DirtyQueue.h"
 #include "../index/IndexedMarketCache.h"
 #include "../index/RealtimeIndexer.h"
+#include "../index/TriangleRuntimeState.h"
+#include "WorkerIntervalStats.h"
 
-#include <cmath>
+namespace
+{
+    struct WorkerPublishSlot
+    {
+        std::mutex mutex;
 
-using json = nlohmann::json;
+        WorkerIntervalStats pending;
+    };
+}
 
 void Bot::Run()
 {
@@ -118,8 +131,6 @@ void Bot::Run()
         }
     }
 
-    MarketSnapshotLogger snapshotLogger;
-
     std::cout
         << "Pairs loaded: "
         << registry.pairs.size()
@@ -190,12 +201,55 @@ void Bot::Run()
     indexedCache.Resize(
         symbolIndex.Size());
 
-    DirtyQueue dirtyQueue;
+    unsigned int hardwareThreads =
+        std::thread::hardware_concurrency();
+
+    if (hardwareThreads == 0)
+    {
+        hardwareThreads = 2;
+    }
+
+    std::size_t engineCount =
+        hardwareThreads / 2;
+
+    engineCount = std::clamp<std::size_t>(
+        engineCount,
+        1,
+        8);
+
+    std::vector<
+        std::unique_ptr<DirtyQueue>>
+        engineQueues;
+
+    std::vector<DirtyQueue*>
+        engineQueuePointers;
+
+    engineQueues.reserve(
+        engineCount);
+
+    engineQueuePointers.reserve(
+        engineCount);
+
+    for (std::size_t engineId = 0;
+        engineId < engineCount;
+        ++engineId)
+    {
+        engineQueues.push_back(
+            std::make_unique<DirtyQueue>(
+                indexedTriangles.size()));
+
+        engineQueuePointers.push_back(
+            engineQueues.back().get());
+    }
+
+    std::vector<TriangleRuntimeState>
+        triangleRuntimeStates(
+            indexedTriangles.size());
 
     RealtimeIndexer realtimeIndexer(
         symbolIndex,
         triangleIndex,
-        dirtyQueue,
+        engineQueuePointers,
         indexedCache);
 
     WebSocketMarketDataProvider wsProvider;
@@ -232,23 +286,35 @@ void Bot::Run()
         << "Initial market warmup completed"
         << std::endl;
 
-    for (SymbolId symbol = 0;
-        symbol < symbolIndex.Size();
-        ++symbol)
+    for (auto& queue :
+        engineQueues)
     {
-        const auto& list =
-            triangleIndex.GetTriangles(
-                symbol);
+        queue->Clear();
+    }
 
-        for (TriangleId triangle : list)
-        {
-            dirtyQueue.Mark(
-                triangle);
-        }
+    const std::int64_t initialEventTimeNs =
+        std::chrono::duration_cast<
+        std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now()
+            .time_since_epoch())
+        .count();
+
+    for (std::size_t triangle = 0;
+        triangle < indexedTriangles.size();
+        ++triangle)
+    {
+        const std::size_t engineId =
+            triangle % engineCount;
+
+        engineQueues[engineId]->Mark(
+            static_cast<TriangleId>(
+                triangle),
+            initialEventTimeNs);
     }
 
     std::cout
-        << "Dirty queue initialized"
+        << "Engine queues initialized: "
+        << engineCount
         << std::endl;
 
     std::cout
@@ -287,204 +353,540 @@ void Bot::Run()
 
     PaperTradeCsvLogger csvLogger;
 
-    MarketMonitor monitor;
+    constexpr std::size_t maxBatchSize =
+        256;
 
-    double lastBestProfit = -999.0;
+    constexpr auto reportInterval =
+        std::chrono::milliseconds(
+            500);
+
+    constexpr auto statsPublishInterval =
+        std::chrono::milliseconds(
+            100);
+
+    std::cout
+        << "Analysis engines: "
+        << engineCount
+        << std::endl;
+
+    std::vector<
+        std::unique_ptr<WorkerPublishSlot>>
+        workerStatsSlots;
+
+    workerStatsSlots.reserve(
+        engineCount);
+
+    for (std::size_t engineId = 0;
+        engineId < engineCount;
+        ++engineId)
+    {
+        workerStatsSlots.push_back(
+            std::make_unique<WorkerPublishSlot>());
+    }
+
+    std::vector<std::thread>
+        analysisWorkers;
+
+    analysisWorkers.reserve(
+        engineCount);
+
+    for (std::size_t engineId = 0;
+        engineId < engineCount;
+        ++engineId)
+    {
+        analysisWorkers.emplace_back(
+            [&, engineId]()
+            {
+                MarketMonitor monitor;
+
+                DirtyQueue& queue =
+                    *engineQueues[engineId];
+
+                WorkerPublishSlot& publishSlot =
+                    *workerStatsSlots[engineId];
+
+                WorkerIntervalStats localStats;
+
+                std::vector<DirtyTask> tasks;
+
+                tasks.reserve(
+                    maxBatchSize);
+
+                auto nextPublishTime =
+                    std::chrono::steady_clock::now() +
+                    statsPublishInterval;
+
+                bool spinBeforeWait = false;
+
+                while (true)
+                {
+                    std::uint64_t spinWaitUs = 0;
+
+                    const bool hasTasks =
+                        queue.WaitAndDrain(
+                            tasks,
+                            maxBatchSize,
+                            nextPublishTime,
+                            spinBeforeWait,
+                            spinWaitUs);
+
+                    localStats.spinWaitUs +=
+                        spinWaitUs;
+
+                    spinBeforeWait =
+                        hasTasks;
+
+                    auto currentTime =
+                        std::chrono::steady_clock::now();
+
+                    if (hasTasks &&
+                        !tasks.empty())
+                    {
+                        const auto analysisStart =
+                            currentTime;
+
+                        monitor.RunBatch(
+                            indexedTriangles,
+                            tasks,
+                            queue,
+                            indexedCache,
+                            triangleRuntimeStates,
+                            settings,
+                            localStats);
+
+                        currentTime =
+                            std::chrono::steady_clock::now();
+
+                        const long long analysisUs =
+                            std::chrono::duration_cast<
+                            std::chrono::microseconds>(
+                                currentTime -
+                                analysisStart)
+                            .count();
+
+                        localStats.batches++;
+
+                        if (analysisUs > 0)
+                        {
+                            localStats.engineWorkUs +=
+                                static_cast<std::uint64_t>(
+                                    analysisUs);
+                        }
+                    }
+
+                    if (currentTime < nextPublishTime)
+                    {
+                        continue;
+                    }
+
+                    if (localStats.batches > 0)
+                    {
+                        std::lock_guard<std::mutex> lock(
+                            publishSlot.mutex);
+
+                        publishSlot.pending.Merge(
+                            localStats);
+
+                        localStats.Clear();
+                    }
+
+                    do
+                    {
+                        nextPublishTime +=
+                            statsPublishInterval;
+                    }
+                    while (currentTime >=
+                        nextPublishTime);
+                }
+            });
+    }
+
+    auto lastReportTime =
+        std::chrono::steady_clock::now();
 
     while (true)
     {
-
-
-        auto marketData =
-            wsProvider.GetSnapshot();
-
-        snapshotLogger.Save(
-            marketData);
-
-        auto analysisStart =
-            std::chrono::high_resolution_clock::now();
-
-        auto stats =
-            monitor.RunDirty(
-                indexedTriangles,
-                dirtyQueue,
-                indexedCache,
-                symbolIndex,
-                settings);
-
-        auto analysisEnd =
-            std::chrono::high_resolution_clock::now();
-
-        auto analysisTime =
-            std::chrono::duration_cast<
-            std::chrono::milliseconds>(
-                analysisEnd - analysisStart);
-
-
-        std::cout
-            << "Analysis time: "
-            << analysisTime.count()
-            << " ms"
-            << std::endl;
-
-
-        if (analysisTime.count() > 0)
-        {
-            std::cout
-                << "Triangles/sec: "
-                <<
-                (stats.analyzedTriangles * 1000)
-                /
-                analysisTime.count()
-                << std::endl;
-        }
-
-        if (std::abs(
-            stats.bestProfitPercent - lastBestProfit)
-        > 0.000001)
-        {
-            std::cout
-                << "\n===== NEW BEST ====="
-                << std::endl;
-
-            std::cout
-                << "Route: "
-                << stats.bestRoute
-                << std::endl;
-
-            std::cout
-                << "Profit: "
-                << stats.bestProfitPercent
-                << "%"
-                << std::endl;
-
-            std::cout
-                << "End Amount: "
-                << stats.bestResult.endAmount
-                << std::endl;
-
-            lastBestProfit =
-                stats.bestProfitPercent;
-        }
-
-        std::cout
-            << std::endl
-            << "=== BANNY STATISTICS ==="
-            << std::endl;
-
-        std::cout
-            << "WebSocket cache symbols: "
-            << marketData.tickers.size()
-            << std::endl;
-
-        std::cout
-            << "Total Triangles: "
-            << stats.totalTriangles
-            << std::endl;
-
-        std::cout
-            << "Analyzed: "
-            << stats.analyzedTriangles
-            << std::endl;
-
-        std::cout
-            << "Valid Triangles: "
-            << stats.validTriangles
-            << std::endl;
-
-        std::cout
-            << "Stale Triangles: "
-            << stats.staleTriangles
-            << std::endl;
-
-        std::cout
-            << "Profitable: "
-            << stats.profitableTriangles
-            << std::endl;
-
-        std::cout
-            << "Rejected: "
-            << stats.rejectedTriangles
-            << std::endl;
-
-        std::cout
-            << "Best Profit: "
-            << stats.bestProfitPercent
-            << "%"
-            << std::endl;
-
-        std::cout
-            << "Best Route: "
-            << stats.bestRoute
-            << std::endl;
-
-        /*
-        std::cout
-            << "\n===== BEST TRIANGLE ====="
-            << std::endl;
-
-        std::cout
-            << "Pair 1: "
-            << stats.bestTriangle.pairAB.symbol
-            << std::endl;
-
-        std::cout
-            << "Pair 2: "
-            << stats.bestTriangle.pairBC.symbol
-            << std::endl;
-
-        std::cout
-            << "Pair 3: "
-            << stats.bestTriangle.pairCA.symbol
-            << std::endl;
-
-        std::cout
-            << "Price 1: "
-            << stats.bestPrices.price1
-            << std::endl;
-
-        std::cout
-            << "Buy 1: "
-            << std::boolalpha
-            << stats.bestPrices.buy1
-            << std::endl;
-
-        std::cout
-            << "Buy 2: "
-            << std::boolalpha
-            << stats.bestPrices.buy2
-            << std::endl;
-
-        std::cout
-            << "Buy 3: "
-            << std::boolalpha
-            << stats.bestPrices.buy3
-            << std::endl;
-
-        std::cout
-            << "Price 2: "
-            << stats.bestPrices.price2
-            << std::endl;
-
-        std::cout
-            << "Price 3: "
-            << stats.bestPrices.price3
-            << std::endl;
-
-        std::cout
-            << "Start Amount: "
-            << stats.bestResult.startAmount
-            << std::endl;
-
-        std::cout
-            << "End Amount: "
-            << stats.bestResult.endAmount
-            << std::endl;
-        */
-
         std::this_thread::sleep_for(
-            std::chrono::milliseconds(
-                config.ScanIntervalMs));
+            reportInterval);
+
+        const auto reportTime =
+            std::chrono::steady_clock::now();
+
+        const std::int64_t reportTimeNs =
+            std::chrono::duration_cast<
+            std::chrono::nanoseconds>(
+                reportTime.time_since_epoch())
+            .count();
+
+        const long long reportWindowUs =
+            std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                reportTime -
+                lastReportTime)
+            .count();
+
+        lastReportTime =
+            reportTime;
+
+        WorkerIntervalStats reportStats;
+
+        std::vector<std::uint64_t>
+            reportEngineWorkUs(
+                engineCount,
+                0);
+
+        for (std::size_t engineId = 0;
+            engineId < engineCount;
+            ++engineId)
+        {
+            WorkerPublishSlot& publishSlot =
+                *workerStatsSlots[engineId];
+
+            std::lock_guard<std::mutex> lock(
+                publishSlot.mutex);
+
+            reportEngineWorkUs[engineId] =
+                publishSlot.pending.engineWorkUs +
+                publishSlot.pending.spinWaitUs;
+
+            reportStats.Merge(
+                publishSlot.pending);
+
+            publishSlot.pending.Clear();
+        }
+
+        std::uint64_t queueAccepted = 0;
+        std::uint64_t queueCoalesced = 0;
+        std::uint64_t immediateRechecks = 0;
+        std::uint64_t deferredRechecks = 0;
+
+        std::size_t queueDepth = 0;
+        std::size_t queuePeak = 0;
+
+        std::size_t busiestEngineId = 0;
+        std::size_t busiestQueueDepth = 0;
+
+        std::uint64_t oldestQueuedTaskAgeUs = 0;
+
+        for (std::size_t engineId = 0;
+            engineId < engineCount;
+            ++engineId)
+        {
+            DirtyQueue& queue =
+                *engineQueues[engineId];
+
+            queueAccepted +=
+                queue.TakeAcceptedMarks();
+
+            queueCoalesced +=
+                queue.TakeCoalescedMarks();
+
+            immediateRechecks +=
+                queue.TakeImmediateRechecks();
+
+            deferredRechecks +=
+                queue.TakeDeferredRechecks();
+
+            const std::size_t currentDepth =
+                queue.Size();
+
+            queueDepth +=
+                currentDepth;
+
+            queuePeak +=
+                queue.TakePeakDepth();
+
+            oldestQueuedTaskAgeUs =
+                (std::max)(
+                    oldestQueuedTaskAgeUs,
+                    queue.OldestQueuedAgeUs(
+                        reportTimeNs));
+
+            if (currentDepth >
+                busiestQueueDepth)
+            {
+                busiestQueueDepth =
+                    currentDepth;
+
+                busiestEngineId =
+                    engineId;
+            }
+        }
+
+        const double averageBatchSize =
+            reportStats.batches > 0
+            ? static_cast<double>(
+                reportStats.processedTasks) /
+            static_cast<double>(
+                reportStats.batches)
+            : 0.0;
+
+        const double engineLoadPercent =
+            engineCount > 0 &&
+            reportWindowUs > 0
+            ? static_cast<double>(
+                reportStats.engineWorkUs +
+                reportStats.spinWaitUs) *
+            100.0 /
+            (static_cast<double>(
+                engineCount) *
+                static_cast<double>(
+                    reportWindowUs))
+            : 0.0;
+
+        std::size_t busiestWorkEngine = 0;
+        std::uint64_t maximumEngineWorkUs = 0;
+
+        for (std::size_t engineId = 0;
+            engineId <
+            reportEngineWorkUs.size();
+            ++engineId)
+        {
+            if (reportEngineWorkUs[engineId] >
+                maximumEngineWorkUs)
+            {
+                maximumEngineWorkUs =
+                    reportEngineWorkUs[engineId];
+
+                busiestWorkEngine =
+                    engineId;
+            }
+        }
+
+        const double maximumEngineLoad =
+            reportWindowUs > 0
+            ? static_cast<double>(
+                maximumEngineWorkUs) *
+            100.0 /
+            static_cast<double>(
+                reportWindowUs)
+            : 0.0;
+
+        std::string bestRoute;
+
+        if (reportStats.hasBest &&
+            reportStats.bestTriangleId <
+            indexedTriangles.size())
+        {
+            const auto& triangle =
+                indexedTriangles[
+                    reportStats.bestTriangleId];
+
+            bestRoute =
+                symbolIndex.GetName(
+                    triangle.pairAB)
+                + " -> " +
+                symbolIndex.GetName(
+                    triangle.pairBC)
+                + " -> " +
+                symbolIndex.GetName(
+                    triangle.pairCA);
+        }
+
+        const WebSocketIntervalStats webSocketStats =
+            wsProvider.TakeIntervalStats();
+
+        const std::uint64_t tickerUpdates =
+            realtimeIndexer.TakeTickerUpdates();
+
+        const std::uint64_t priceChanges =
+            realtimeIndexer.TakePriceChanges();
+
+        const std::uint64_t unchangedPrices =
+            realtimeIndexer.TakeUnchangedPrices();
+
+        const std::uint64_t unknownSymbols =
+            realtimeIndexer.TakeUnknownSymbols();
+
+        const std::uint64_t disconnectEvents =
+            realtimeIndexer.TakeDisconnectEvents();
+
+        const std::uint64_t invalidatedSymbols =
+            realtimeIndexer.TakeInvalidatedSymbols();
+
+        std::cout
+            << '\n'
+            << "=== BANNY SHARDED ENGINES ===\n"
+            << "Analysis engines: "
+            << engineCount
+            << '\n'
+            << "Independent queues: "
+            << engineQueues.size()
+            << '\n'
+            << "Subscribed symbols: "
+            << wsSymbols.size()
+            << '\n'
+            << "Indexed symbols: "
+            << symbolIndex.Size()
+            << '\n'
+            << "Total triangles: "
+            << indexedTriangles.size()
+            << '\n'
+            << '\n'
+            << "WebSocket messages / interval: "
+            << webSocketStats.receivedMessages
+            << '\n'
+            << "Parsed messages / interval: "
+            << webSocketStats.parsedMessages
+            << '\n'
+            << "Parse errors / interval: "
+            << webSocketStats.parseErrors
+            << '\n'
+            << "Ticker updates / interval: "
+            << tickerUpdates
+            << '\n'
+            << "Price changes / interval: "
+            << priceChanges
+            << '\n'
+            << "Unchanged prices skipped: "
+            << unchangedPrices
+            << '\n'
+            << "Receive-to-index average: "
+            << webSocketStats.receiveToIndex.AverageUs()
+            << " us\n"
+            << "Receive-to-index P95: "
+            << webSocketStats.receiveToIndex.PercentileUs(
+                0.95)
+            << " us\n"
+            << "Receive-to-index P99: "
+            << webSocketStats.receiveToIndex.PercentileUs(
+                0.99)
+            << " us\n"
+            << "Receive-to-index maximum: "
+            << webSocketStats.receiveToIndex.MaximumUs()
+            << " us\n"
+            << "Queue accepted / interval: "
+            << queueAccepted
+            << '\n'
+            << "Queue coalesced / interval: "
+            << queueCoalesced
+            << '\n'
+            << "Immediate rechecks / interval: "
+            << immediateRechecks
+            << '\n'
+            << "Deferred rechecks / interval: "
+            << deferredRechecks
+            << '\n'
+            << "Queue depth total: "
+            << queueDepth
+            << '\n'
+            << "Queue peak total: "
+            << queuePeak
+            << '\n'
+            << "Oldest queued task age: "
+            << oldestQueuedTaskAgeUs
+            << " us\n"
+            << "Busiest queue: "
+            << busiestEngineId
+            << " | depth: "
+            << busiestQueueDepth
+            << '\n'
+            << '\n'
+            << "Batches / interval: "
+            << reportStats.batches
+            << '\n'
+            << "Average batch size: "
+            << averageBatchSize
+            << '\n'
+            << "Tasks processed / interval: "
+            << reportStats.processedTasks
+            << '\n'
+            << "Analyzed / interval: "
+            << reportStats.analyzedTriangles
+            << '\n'
+            << "Average engine load: "
+            << engineLoadPercent
+            << "%\n"
+            << "Maximum engine load: "
+            << maximumEngineLoad
+            << "% | engine: "
+            << busiestWorkEngine
+            << '\n'
+            << "Total analysis work: "
+            << reportStats.engineWorkUs
+            << " us\n"
+            << "Total active spin: "
+            << reportStats.spinWaitUs
+            << " us\n"
+            << '\n'
+            << "Queue wait samples: "
+            << reportStats.queueWait.Count()
+            << '\n'
+            << "Queue wait average: "
+            << reportStats.queueWait.AverageUs()
+            << " us\n"
+            << "Queue wait P95: "
+            << reportStats.queueWait.PercentileUs(
+                0.95)
+            << " us\n"
+            << "Queue wait P99: "
+            << reportStats.queueWait.PercentileUs(
+                0.99)
+            << " us\n"
+            << "Queue wait maximum: "
+            << reportStats.queueWait.MaximumUs()
+            << " us\n"
+            << '\n'
+            << "Calculation average: "
+            << reportStats.calculation.AverageUs()
+            << " us\n"
+            << "Calculation P95: "
+            << reportStats.calculation.PercentileUs(
+                0.95)
+            << " us\n"
+            << "Calculation P99: "
+            << reportStats.calculation.PercentileUs(
+                0.99)
+            << " us\n"
+            << "Calculation maximum: "
+            << reportStats.calculation.MaximumUs()
+            << " us\n"
+            << '\n'
+            << "End-to-end latency average: "
+            << reportStats.totalLatency.AverageUs()
+            << " us\n"
+            << "End-to-end latency P95: "
+            << reportStats.totalLatency.PercentileUs(
+                0.95)
+            << " us\n"
+            << "End-to-end latency P99: "
+            << reportStats.totalLatency.PercentileUs(
+                0.99)
+            << " us\n"
+            << "End-to-end latency maximum: "
+            << reportStats.totalLatency.MaximumUs()
+            << " us\n"
+            << '\n'
+            << "Missing ticker / interval: "
+            << reportStats.missingTickerTriangles
+            << '\n'
+            << "Stale / interval: "
+            << reportStats.staleTriangles
+            << '\n'
+            << "Duplicate versions skipped: "
+            << reportStats.duplicateVersionSkips
+            << '\n'
+            << "Disconnects / interval: "
+            << disconnectEvents
+            << '\n'
+            << "Invalidated symbols: "
+            << invalidatedSymbols
+            << '\n'
+            << "Unindexed ticker updates: "
+            << unknownSymbols
+            << '\n'
+            << '\n'
+            << "Profitable / interval: "
+            << reportStats.profitableTriangles
+            << '\n'
+            << "Best profit: "
+            << (reportStats.hasBest
+                ? reportStats.bestProfitPercent
+                : 0.0)
+            << "%\n"
+            << "Best route: "
+            << bestRoute
+            << std::endl;
     }
 
     logger.Info("Core initialized");

@@ -1,19 +1,40 @@
 #include "MarketMonitor.h"
 
-#include "../arbitrage/ArbitrageEngine.h"
+#include <chrono>
+#include <cstdint>
 
-#include "MarketMonitor.h"
+#include "../arbitrage/ArbitrageEngine.h"
 #include "../profit/ProfitCalculator.h"
-#include "../index/SymbolRegistryIndex.h"
 #include "../profit/TradePrices.h"
-#include "../profit/ProfitCalculator.h"
-#include <iostream>
+
+namespace
+{
+    std::int64_t ToNanoseconds(
+        std::chrono::steady_clock::time_point time)
+    {
+        return std::chrono::duration_cast<
+            std::chrono::nanoseconds>(
+                time.time_since_epoch())
+            .count();
+    }
+
+    std::uint64_t ClampDurationUs(
+        std::int64_t durationNs)
+    {
+        if (durationNs <= 0)
+        {
+            return 0;
+        }
+
+        return static_cast<std::uint64_t>(
+            durationNs / 1000);
+    }
+}
 
 Statistics MarketMonitor::Run(
     const std::vector<Triangle>& triangles,
     const MarketData& marketData,
     const TradingSettings& settings)
-
 {
     ArbitrageEngine engine;
 
@@ -23,182 +44,232 @@ Statistics MarketMonitor::Run(
         settings);
 }
 
-Statistics MarketMonitor::RunDirty(
+void MarketMonitor::RunBatch(
     const std::vector<IndexedTriangle>& indexedTriangles,
-    DirtyQueue& dirtyQueue,
+    const std::vector<DirtyTask>& tasks,
+    DirtyQueue& queue,
     IndexedMarketCache& marketCache,
-    SymbolRegistryIndex& symbolIndex,
-    const TradingSettings& settings)
+    std::vector<TriangleRuntimeState>& runtimeStates,
+    const TradingSettings& settings,
+    WorkerIntervalStats& stats)
 {
-    Statistics stats;
-
-    int dirtyProcessed = 0;
-
     ProfitCalculator calculator;
 
-    auto market =
-        marketCache.Snapshot();
+    const double commissionRate =
+        settings.commissionPercent / 100.0;
 
+    const double slippageRate =
+        settings.slippagePercent / 100.0;
 
-    stats.totalTriangles =
-        static_cast<int>(
-            indexedTriangles.size());
-
-
-    while (!dirtyQueue.Empty())
-    {
-        TriangleId id =
-            dirtyQueue.Pop();
-
-        dirtyQueue.Complete(id);
-
-        dirtyProcessed++;
-
-
-        if (id >= indexedTriangles.size())
+    const auto analyzeTask =
+        [&](const DirtyTask& task)
         {
-            continue;
-        }
+            const auto calculationStart =
+                std::chrono::steady_clock::now();
 
+            const std::int64_t calculationStartNs =
+                ToNanoseconds(
+                    calculationStart);
 
-        const auto& triangle =
-            indexedTriangles[id];
+            stats.processedTasks++;
 
+            stats.queueWait.Record(
+                ClampDurationUs(
+                    calculationStartNs -
+                    task.queuedAtNs));
 
-        const auto& ticker1 =
-            market.Get(
-                triangle.pairAB);
+            const auto finishTask =
+                [&](TriangleRuntimeState* runtimeState)
+                {
+                    const auto calculationEnd =
+                        std::chrono::steady_clock::now();
 
+                    const std::int64_t calculationEndNs =
+                        ToNanoseconds(
+                            calculationEnd);
 
-        const auto& ticker2 =
-            market.Get(
-                triangle.pairBC);
+                    if (runtimeState != nullptr)
+                    {
+                        runtimeState->lastCalculationNs =
+                            calculationEndNs;
+                    }
 
+                    stats.calculation.Record(
+                        ClampDurationUs(
+                            calculationEndNs -
+                            calculationStartNs));
 
-        const auto& ticker3 =
-            market.Get(
-                triangle.pairCA);
+                    stats.totalLatency.Record(
+                        ClampDurationUs(
+                            calculationEndNs -
+                            task.eventTimeNs));
+                };
 
+            const TriangleId id =
+                task.triangle;
 
-        if (!ticker1.valid ||
-            !ticker2.valid ||
-            !ticker3.valid)
-        {
-            stats.missingTickerTriangles++;
-            continue;
-        }
+            if (id >= indexedTriangles.size() ||
+                id >= runtimeStates.size())
+            {
+                finishTask(nullptr);
+                return;
+            }
 
+            const auto& triangle =
+                indexedTriangles[id];
 
-        TradePrices prices;
+            TriangleRuntimeState& runtimeState =
+                runtimeStates[id];
 
+            IndexedTicker ticker1;
+            IndexedTicker ticker2;
+            IndexedTicker ticker3;
 
-        prices.buy1 =
-            triangle.buy1;
+            marketCache.ReadTriangle(
+                triangle.pairAB,
+                triangle.pairBC,
+                triangle.pairCA,
+                ticker1,
+                ticker2,
+                ticker3);
 
-        prices.buy2 =
-            triangle.buy2;
+            if (runtimeState.hasVersions &&
+                runtimeState.version1 == ticker1.version &&
+                runtimeState.version2 == ticker2.version &&
+                runtimeState.version3 == ticker3.version)
+            {
+                stats.duplicateVersionSkips++;
+                finishTask(&runtimeState);
+                return;
+            }
 
-        prices.buy3 =
-            triangle.buy3;
+            runtimeState.version1 =
+                ticker1.version;
 
+            runtimeState.version2 =
+                ticker2.version;
 
-        prices.price1 =
-            prices.buy1
-            ? ticker1.askPrice
-            : ticker1.bidPrice;
+            runtimeState.version3 =
+                ticker3.version;
 
+            runtimeState.hasVersions =
+                true;
 
-        prices.price2 =
-            prices.buy2
-            ? ticker2.askPrice
-            : ticker2.bidPrice;
+            if (!ticker1.initialized ||
+                !ticker2.initialized ||
+                !ticker3.initialized)
+            {
+                stats.missingTickerTriangles++;
+                finishTask(&runtimeState);
+                return;
+            }
 
+            if (!ticker1.valid ||
+                !ticker2.valid ||
+                !ticker3.valid)
+            {
+                stats.staleTriangles++;
+                finishTask(&runtimeState);
+                return;
+            }
 
-        prices.price3 =
-            prices.buy3
-            ? ticker3.askPrice
-            : ticker3.bidPrice;
+            TradePrices prices;
 
+            prices.buy1 =
+                triangle.buy1;
 
-        stats.validTriangles++;
-        stats.analyzedTriangles++;
+            prices.buy2 =
+                triangle.buy2;
 
+            prices.buy3 =
+                triangle.buy3;
 
-        auto result =
-            calculator.CalculateRealistic(
-                settings.startBalance,
-                prices,
-                settings.commissionPercent / 100.0,
-                settings.slippagePercent / 100.0);
+            prices.price1 =
+                prices.buy1
+                ? ticker1.askPrice
+                : ticker1.bidPrice;
 
+            prices.price2 =
+                prices.buy2
+                ? ticker2.askPrice
+                : ticker2.bidPrice;
 
-        if (stats.analyzedTriangles == 1 ||
-            result.profitPercent >
-            stats.bestProfitPercent)
-        {
-            stats.bestProfitPercent =
+            prices.price3 =
+                prices.buy3
+                ? ticker3.askPrice
+                : ticker3.bidPrice;
+
+            if (prices.price1 <= 0.0 ||
+                prices.price2 <= 0.0 ||
+                prices.price3 <= 0.0)
+            {
+                stats.missingTickerTriangles++;
+                finishTask(&runtimeState);
+                return;
+            }
+
+            stats.analyzedTriangles++;
+
+            const auto result =
+                calculator.CalculateRealistic(
+                    settings.startBalance,
+                    prices,
+                    commissionRate,
+                    slippageRate);
+
+            runtimeState.lastProfitPercent =
                 result.profitPercent;
 
-            stats.bestTriangle.assetA =
-                triangle.assetA;
+            if (!stats.hasBest ||
+                result.profitPercent >
+                stats.bestProfitPercent)
+            {
+                stats.hasBest = true;
 
-            stats.bestTriangle.assetB =
-                triangle.assetB;
+                stats.bestProfitPercent =
+                    result.profitPercent;
 
-            stats.bestTriangle.assetC =
-                triangle.assetC;
+                stats.bestTriangleId =
+                    id;
+            }
 
-            stats.bestTriangle.pairAB.symbol =
-                symbolIndex.GetName(triangle.pairAB);
+            if (result.profitPercent >=
+                settings.minProfitPercent)
+            {
+                stats.profitableTriangles++;
+            }
+            else
+            {
+                stats.rejectedTriangles++;
+            }
 
-            stats.bestTriangle.pairBC.symbol =
-                symbolIndex.GetName(triangle.pairBC);
+            finishTask(&runtimeState);
+        };
 
-            stats.bestTriangle.pairCA.symbol =
-                symbolIndex.GetName(triangle.pairCA);
+    for (const DirtyTask& task :
+        tasks)
+    {
+        analyzeTask(
+            task);
 
-            stats.bestRoute =
-                symbolIndex.GetName(
-                    triangle.pairAB)
-                + " -> "
-                + symbolIndex.GetName(
-                    triangle.pairBC)
-                + " -> "
-                + symbolIndex.GetName(
-                    triangle.pairCA);
+        DirtyTask recheckTask;
 
-            stats.bestPrices =
-                prices;
-
-            stats.bestResult =
-                result;
-
-            stats.bestTriangle.assetA =
-                triangle.assetA;
-
-            stats.bestTriangle.assetB =
-                triangle.assetB;
-
-            stats.bestTriangle.assetC =
-                triangle.assetC;
-        }
-
-
-        if (result.profitPercent >=
-            settings.minProfitPercent)
+        if (!queue.FinishProcessing(
+            task.triangle,
+            true,
+            recheckTask))
         {
-            stats.profitableTriangles++;
+            continue;
         }
-        else
-        {
-            stats.rejectedTriangles++;
-        }
+
+        analyzeTask(
+            recheckTask);
+
+        DirtyTask unusedTask;
+
+        queue.FinishProcessing(
+            task.triangle,
+            false,
+            unusedTask);
     }
-
-    std::cout
-        << "Dirty analyzed this cycle: "
-        << dirtyProcessed
-        << std::endl;
-
-    return stats;
 }

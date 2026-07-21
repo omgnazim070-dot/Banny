@@ -1,0 +1,28 @@
+BANNY — ЭТАП 1: HOT PATH OPTIMIZATION
+
+1. Убедиться, что активна ветка feature/назым.
+2. Закрыть запущенный Banny.exe.
+3. Скопировать содержимое этого архива в корень C:\Projects\Banny с заменой файлов.
+4. Выполнить чистую пересборку x64-Debug.
+5. Запустить бот и прислать один полный блок "=== BANNY SHARDED ENGINES ===".
+
+Добавлены файлы:
+src/core/LatencyHistogram.h
+src/core/WorkerIntervalStats.h
+
+Заменены файлы:
+CMakeLists.txt
+src/core/bot.cpp
+src/index/DirtyQueue.h
+src/index/DirtyQueue.cpp
+src/index/RealtimeIndexer.h
+src/index/RealtimeIndexer.cpp
+src/market/MarketMonitor.h
+src/market/MarketMonitor.cpp
+src/market/WebSocketMarketDataProvider.cpp
+
+Ожидаемые новые строки диагностики:
+Oldest queued task age
+Queue wait average / P95 / P99 / maximum
+Calculation average / P95 / P99 / maximum
+Total latency average / P95 / P99 / maximum

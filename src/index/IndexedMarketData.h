@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 #include "IndexedTicker.h"
@@ -9,19 +10,20 @@ class IndexedMarketData
 public:
 
     void Resize(
-        size_t count)
+        std::size_t count)
     {
-        tickers.resize(count);
+        tickers.resize(
+            count);
     }
 
     IndexedTicker& Get(
-        size_t id)
+        std::size_t id)
     {
         return tickers[id];
     }
 
     const IndexedTicker& Get(
-        size_t id) const
+        std::size_t id) const
     {
         return tickers[id];
     }

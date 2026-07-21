@@ -12,6 +12,8 @@ add_executable(Banny
     src/config/Config.cpp
     src/logger/Logger.cpp
     src/core/bot.cpp
+    src/core/LatencyHistogram.h
+    src/core/WorkerIntervalStats.h
 
     src/scanner/Scanner.cpp
 
@@ -29,6 +31,7 @@ add_executable(Banny
     src/index/DirtyQueue.cpp
     src/index/IndexedMarketCache.cpp
     src/index/RealtimeIndexer.cpp
+    src/index/TriangleRuntimeState.h
 
     src/binance/BinanceRestClient.cpp
     "src/market/Ticker.h" "src/market/Ticker.cpp"
@@ -41,6 +44,7 @@ add_executable(Banny
     src/market/MarketDataCache.h
     src/market/MarketDataCache.cpp
     src/market/WebSocketMarketDataProvider.h
+    src/market/WebSocketIntervalStats.h
     src/market/WebSocketMarketDataProvider.cpp
  "src/index/SymbolId.h" "src/index/SymbolRegistryIndex.h" "src/index/SymbolRegistryIndex.cpp" "src/index/TriangleIndex.h" "src/index/TriangleIndex.cpp" "src/index/IndexedTriangleBuilder.h" "src/index/IndexedTriangleBuilder.cpp" "src/index/DirtyQueue.h" "src/index/DirtyQueue.cpp" "src/index/IndexedTicker.h" "src/index/IndexedMarketData.h" "src/index/IndexedMarketCache.h" "src/index/IndexedMarketCache.cpp" "src/index/RealtimeIndexer.h" "src/index/RealtimeIndexer.cpp")
 
